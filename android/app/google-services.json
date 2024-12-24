@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "54586227246",
+    "project_id": "timely-tourist",
+    "storage_bucket": "timely-tourist.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:54586227246:android:436bd250b19e287e1ffdbf",
+        "android_client_info": {
+          "package_name": "com.example.tts"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "54586227246-ft34tdjno3t4r00fr5arvtrjf8i6nb7j.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBiZiSSK_BCVqDA91Jtezygb5l1pz6JCm4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "54586227246-ft34tdjno3t4r00fr5arvtrjf8i6nb7j.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
