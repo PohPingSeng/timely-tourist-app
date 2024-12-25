@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'widgets/custom_bottom_nav.dart';
+import 'recommendation.dart';
+import 'profile.dart';
+import 'popular_places.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class ExplorePage extends StatefulWidget {
   @override
@@ -8,350 +13,615 @@ class ExplorePage extends StatefulWidget {
 
 class _ExplorePageState extends State<ExplorePage> {
   final TextEditingController _locationController = TextEditingController();
+  Set<String> selectedCategories = {};
+  List<String> categories = [
+    'Mountains',
+    'Beach',
+    'City',
+    'Historical Sites',
+    'Adventure',
+    'Nature and Outdoor',
+    'Entertainment',
+    'Cultural Spots',
+    'Shopping Areas',
+    'Events'
+  ];
+  List<Map<String, dynamic>> popularPlaces = [];
+
+  // Add this map for category icons
+  final Map<String, IconData> categoryIcons = {
+    'Mountains': Icons.landscape,
+    'Beach': Icons.beach_access,
+    'City': Icons.location_city,
+    'Historical Sites': Icons.account_balance,
+    'Adventure': Icons.hiking,
+    'Nature and Outdoor': Icons.park,
+    'Entertainment': Icons.movie,
+    'Cultural Spots': Icons.museum,
+    'Shopping Areas': Icons.shopping_bag,
+    'Events': Icons.event,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPopularPlaces();
+  }
+
+  Future<void> _loadPopularPlaces() async {
+    final String apiKey = 'AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts';
+    final List<Map<String, String>> places = [
+      {'name': 'Mount Fuji', 'country': 'Japan'},
+      {'name': 'Bali Beach', 'country': 'Indonesia'},
+      {'name': 'Swiss Alps', 'country': 'Switzerland'},
+      {'name': 'Grand Canyon', 'country': 'USA'},
+      {'name': 'Eiffel Tower', 'country': 'France'},
+    ];
+
+    for (var place in places) {
+      try {
+        final response = await http.get(Uri.parse(
+            'https://maps.googleapis.com/maps/api/place/textsearch/json?query=${place['name']}&key=$apiKey'));
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data['results'].isNotEmpty) {
+            final result = data['results'][0];
+            String photoUrl =
+                'https://via.placeholder.com/180x120?text=${place['name']}';
+
+            if (result['photos'] != null && result['photos'].isNotEmpty) {
+              final photoReference = result['photos'][0]['photo_reference'];
+              photoUrl =
+                  'https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=$photoReference&key=$apiKey';
+            }
+
+            setState(() {
+              popularPlaces.add({
+                'name': place['name'] ?? '',
+                'location': place['country'] ?? '',
+                'rating': (result['rating']?.toString() ?? '4.0'),
+                'image': photoUrl,
+              });
+            });
+          }
+        }
+      } catch (e) {
+        print('Error loading place: $e');
+      }
+    }
+  }
+
+  void _applyFilters() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => RecommendationPage()),
+    );
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _locationController.clear();
+      selectedCategories.clear();
+    });
+  }
+
+  void _navigateToProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ProfilePage()),
+    );
+  }
+
+  void _navigateToAllPopularPlaces() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => PopularPlacesPage()),
+    );
+  }
+
+  void _showAllCategories(BuildContext context) {
+    // Create a temporary set to hold selections
+    Set<String> tempSelected = Set.from(selectedCategories);
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          // Use StatefulBuilder to update dialog state
+          builder: (context, setState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Container(
+                width: MediaQuery.of(context).size.width * 0.8,
+                padding: EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'All Categories',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 16),
+                    Container(
+                      height: 300,
+                      child: GridView.count(
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
+                        childAspectRatio: 1.1,
+                        children: categories.map((category) {
+                          bool isSelected = tempSelected.contains(category);
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                if (isSelected) {
+                                  tempSelected.remove(category);
+                                } else {
+                                  tempSelected.add(category);
+                                }
+                              });
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? Colors.blue[100]
+                                    : Colors.grey[100],
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? Colors.blue[800]!
+                                      : Colors.grey[300]!,
+                                ),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    categoryIcons[category] ?? Icons.category,
+                                    size: 28,
+                                    color: isSelected
+                                        ? Colors.blue[800]
+                                        : Colors.grey[600],
+                                  ),
+                                  SizedBox(height: 6),
+                                  Text(
+                                    category,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isSelected
+                                          ? Colors.blue[800]
+                                          : Colors.grey[800],
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          this.setState(() {
+                            selectedCategories = tempSelected;
+                          });
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue[100],
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Done',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.only(
-              left: 20.0,
-              right: 20.0,
-              top: 16.0,
-              bottom: 80.0,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header with time and user info
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        bottom: false,
+        child: Column(
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(
+                  left: 20.0,
+                  right: 20.0,
+                  top: 20.0,
+                  bottom: 0.0,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    // Header
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Hi, UserName 👋',
+                          'Hi, UserName',
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
-                            color: Colors.black87,
                           ),
                         ),
-                        Text(
-                          'Explore destinations you want!',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 14,
-                          ),
+                        GestureDetector(
+                          onTap: _navigateToProfile,
+                          child: Icon(Icons.account_circle_outlined, size: 35),
                         ),
                       ],
                     ),
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 8,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: CircleAvatar(
-                        radius: 24,
-                        backgroundColor: Colors.white,
-                        child: Icon(Icons.person, color: Colors.blue[800]),
-                      ),
-                    ),
-                  ],
-                ),
-
-                SizedBox(height: 24),
-
-                // Search Section
-                Container(
-                  padding: EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Search',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Filter By Destination',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                      SizedBox(height: 16),
-                      TextField(
-                        controller: _locationController,
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: Colors.grey[50],
-                          hintText: 'Enter Location',
-                          hintStyle: TextStyle(color: Colors.grey[400]),
-                          prefixIcon:
-                              Icon(Icons.search, color: Colors.blue[800]),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 16),
-                      Text(
-                        'Categories',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      SizedBox(height: 12),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _buildCategoryChip(
-                                'Mountains', Icons.landscape, true),
-                            _buildCategoryChip('Camp', Icons.cabin, false),
-                            _buildCategoryChip(
-                                'Beach', Icons.beach_access, false),
-                            _buildCategoryChip('Park', Icons.park, false),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () {
-                              // Clear filters
-                            },
-                            child: Text('Clear'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.grey[600],
-                            ),
-                          ),
-                          SizedBox(width: 12),
-                          ElevatedButton(
-                            onPressed: () {
-                              // Apply filters
-                            },
-                            child: Text('Apply'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue[800],
-                              foregroundColor: Colors.white,
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                SizedBox(height: 24),
-
-                // Popular Section
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
                     Text(
-                      'Popular Places',
+                      'Explore destinations you want!',
                       style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+                        fontSize: 16,
+                        color: Colors.grey[600],
                       ),
                     ),
-                    TextButton(
-                      onPressed: () {},
-                      child: Text('See All'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.blue[800],
+                    SizedBox(height: 20),
+
+                    // Search Bar
+                    Container(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Filter By Destination',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Icon(Icons.location_on_outlined,
+                                  size: 20, color: Colors.grey[600]),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: _locationController,
+                                  decoration: InputDecoration(
+                                    hintText: 'Enter Location',
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'Categories',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    '(${selectedCategories.length} selected)',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              TextButton(
+                                onPressed: () => _showAllCategories(context),
+                                child: Text(
+                                  'See All',
+                                  style: TextStyle(
+                                    color: Colors.blue[800],
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 8),
+                          Container(
+                            height: 100,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              physics: BouncingScrollPhysics(),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width:
+                                        MediaQuery.of(context).size.width * 1.5,
+                                    child: GridView.count(
+                                      crossAxisCount: 5,
+                                      mainAxisSpacing: 8,
+                                      crossAxisSpacing: 12,
+                                      childAspectRatio: 1.0,
+                                      physics: NeverScrollableScrollPhysics(),
+                                      children: categories.map((category) {
+                                        bool isSelected = selectedCategories
+                                            .contains(category);
+                                        return GestureDetector(
+                                          onTap: () {
+                                            setState(() {
+                                              if (isSelected) {
+                                                selectedCategories
+                                                    .remove(category);
+                                              } else {
+                                                selectedCategories
+                                                    .add(category);
+                                              }
+                                            });
+                                          },
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: isSelected
+                                                  ? Colors.blue[100]
+                                                  : Colors.grey[100],
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: isSelected
+                                                    ? Colors.blue[800]!
+                                                    : Colors.grey[300]!,
+                                                width: 1,
+                                              ),
+                                            ),
+                                            child: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Icon(
+                                                  categoryIcons[category] ??
+                                                      Icons.category,
+                                                  size: 28,
+                                                  color: isSelected
+                                                      ? Colors.blue[800]
+                                                      : Colors.grey[600],
+                                                ),
+                                                SizedBox(height: 4),
+                                                Text(
+                                                  category,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: isSelected
+                                                        ? Colors.blue[800]
+                                                        : Colors.grey[800],
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: _clearFilters,
+                                child: Text('Clear'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.grey[800],
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed:
+                                    (_locationController.text.isNotEmpty ||
+                                            selectedCategories.isNotEmpty)
+                                        ? _applyFilters
+                                        : null,
+                                child: Text('Apply'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor:
+                                      (_locationController.text.isNotEmpty ||
+                                              selectedCategories.isNotEmpty)
+                                          ? Colors.blue[800]
+                                          : Colors.blue[200],
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: 8),
+
+                    // Popular Places section
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Popular Places',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _navigateToAllPopularPlaces,
+                                child: Text(
+                                  'See All',
+                                  style: TextStyle(
+                                    color: Colors.blue[800],
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 10),
+                          Container(
+                            height: 155,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: popularPlaces.length,
+                              itemBuilder: (context, index) {
+                                return _buildPopularCard(popularPlaces[index]);
+                              },
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                SizedBox(height: 16),
-                Container(
-                  height: 280,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      _buildPopularCard(
-                          'Mount Fuji', 'Japan', 'assets/img/fuji.jpg', '4.8'),
-                      _buildPopularCard('Bali Beach', 'Indonesia',
-                          'assets/img/bali.jpg', '4.6'),
-                      _buildPopularCard('Swiss Alps', 'Switzerland',
-                          'assets/img/alps.jpg', '4.9'),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
       bottomNavigationBar: CustomBottomNav(currentIndex: 0),
     );
   }
 
-  Widget _buildCategoryChip(String label, IconData icon, bool isSelected) {
+  Widget _buildPopularCard(Map<String, dynamic> place) {
     return Container(
-      margin: EdgeInsets.only(right: 12),
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      width: 155,
+      height: 155,
+      margin: EdgeInsets.only(right: 8),
       decoration: BoxDecoration(
-        color: isSelected ? Colors.blue[800] : Colors.white,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 18,
-            color: isSelected ? Colors.white : Colors.grey[600],
-          ),
-          SizedBox(width: 8),
-          Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.grey[600],
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPopularCard(
-      String placeName, String location, String imageUrl, String rating) {
-    return Container(
-      width: 200,
-      margin: EdgeInsets.only(right: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
             color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: Offset(0, 4),
+            blurRadius: 4,
+            offset: Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Image container
           Container(
-            height: 150,
+            height: 85,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
               image: DecorationImage(
-                image: AssetImage(imageUrl),
+                image: NetworkImage(
+                    place['image'] ?? 'https://via.placeholder.com/180x120'),
                 fit: BoxFit.cover,
               ),
             ),
-            child: Stack(
-              children: [
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(Icons.favorite_border,
-                        size: 20, color: Colors.red),
-                  ),
-                ),
-                Positioned(
-                  bottom: 12,
-                  right: 12,
-                  child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.star, size: 16, color: Colors.amber),
-                        SizedBox(width: 4),
-                        Text(rating,
-                            style: TextStyle(fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ),
+          // Details container
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.all(6),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  placeName,
+                  place['name'] ?? '',
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: Colors.black87,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 SizedBox(height: 4),
                 Row(
                   children: [
-                    Icon(Icons.location_on, size: 14, color: Colors.blue[800]),
-                    SizedBox(width: 4),
+                    Icon(Icons.location_on, size: 12, color: Colors.grey[600]),
+                    SizedBox(width: 2),
+                    Expanded(
+                      child: Text(
+                        place['location'] ?? '',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[600],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 2),
+                Row(
+                  children: [
+                    Icon(Icons.star, size: 12, color: Colors.amber),
+                    SizedBox(width: 2),
                     Text(
-                      location,
-                      style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                      place['rating'] ?? '',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[800],
+                      ),
                     ),
                   ],
                 ),
