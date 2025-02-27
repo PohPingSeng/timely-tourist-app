@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:firebase_core/firebase_core.dart';
-import 'explore.dart';
 import 'signUp.dart';
 import 'firebase_options.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'splash_screen.dart';
 
 void main() async {
   try {
@@ -114,14 +114,14 @@ class TouristLoginPageState extends State<TouristLoginPage> {
         return;
       }
 
-      // If credentials are correct, navigate to ExplorePage
+      // If credentials are correct, navigate to SplashScreen
       if (userQuery.docs.isNotEmpty) {
-        final userEmail = email; // Store the email
+        final userEmail = email;
         if (mounted) {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => ExplorePage(userEmail: userEmail),
+              builder: (context) => SplashScreen(userEmail: userEmail),
             ),
           );
         }
