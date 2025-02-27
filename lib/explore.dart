@@ -7,6 +7,10 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class ExplorePage extends StatefulWidget {
+  final String userEmail;
+
+  const ExplorePage({Key? key, required this.userEmail}) : super(key: key);
+
   @override
   _ExplorePageState createState() => _ExplorePageState();
 }
@@ -95,7 +99,9 @@ class _ExplorePageState extends State<ExplorePage> {
   void _applyFilters() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => RecommendationPage()),
+      MaterialPageRoute(
+          builder: (context) =>
+              RecommendationPage(userEmail: widget.userEmail)),
     );
   }
 
@@ -109,14 +115,17 @@ class _ExplorePageState extends State<ExplorePage> {
   void _navigateToProfile() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => ProfilePage()),
+      MaterialPageRoute(
+          builder: (context) => ProfilePage(userEmail: widget.userEmail)),
     );
   }
 
   void _navigateToAllPopularPlaces() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => PopularPlacesPage()),
+      MaterialPageRoute(
+        builder: (context) => PopularPlacesPage(userEmail: widget.userEmail),
+      ),
     );
   }
 
@@ -543,7 +552,10 @@ class _ExplorePageState extends State<ExplorePage> {
           ],
         ),
       ),
-      bottomNavigationBar: CustomBottomNav(currentIndex: 0),
+      bottomNavigationBar: CustomBottomNav(
+        currentIndex: 0,
+        userEmail: widget.userEmail,
+      ),
     );
   }
 

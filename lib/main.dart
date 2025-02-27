@@ -115,11 +115,16 @@ class TouristLoginPageState extends State<TouristLoginPage> {
       }
 
       // If credentials are correct, navigate to ExplorePage
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => ExplorePage()),
-        );
+      if (userQuery.docs.isNotEmpty) {
+        final userEmail = email; // Store the email
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ExplorePage(userEmail: userEmail),
+            ),
+          );
+        }
       }
     } catch (e) {
       print('Login error: $e'); // Debug print

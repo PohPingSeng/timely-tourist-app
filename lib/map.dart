@@ -7,6 +7,10 @@ import 'dart:convert';
 import 'widgets/custom_bottom_nav.dart';
 
 class MapPage extends StatefulWidget {
+  final String userEmail;
+
+  const MapPage({Key? key, required this.userEmail}) : super(key: key);
+
   @override
   _MapPageState createState() => _MapPageState();
 }
@@ -607,7 +611,10 @@ class _MapPageState extends State<MapPage> {
           ),
         ],
       ),
-      bottomNavigationBar: CustomBottomNav(currentIndex: 2),
+      bottomNavigationBar: CustomBottomNav(
+        currentIndex: 2,
+        userEmail: widget.userEmail,
+      ),
     );
   }
 

@@ -4,6 +4,11 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class PopularPlacesPage extends StatefulWidget {
+  final String userEmail;
+
+  const PopularPlacesPage({Key? key, required this.userEmail})
+      : super(key: key);
+
   @override
   _PopularPlacesPageState createState() => _PopularPlacesPageState();
 }
@@ -139,7 +144,10 @@ class _PopularPlacesPageState extends State<PopularPlacesPage> {
                 );
               },
             ),
-      bottomNavigationBar: CustomBottomNav(currentIndex: 0),
+      bottomNavigationBar: CustomBottomNav(
+        currentIndex: 0,
+        userEmail: widget.userEmail,
+      ),
     );
   }
 }

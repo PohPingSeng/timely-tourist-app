@@ -7,9 +7,13 @@ import '../tripPlan.dart';
 
 class CustomBottomNav extends StatelessWidget {
   final int currentIndex;
+  final String userEmail;
 
-  const CustomBottomNav({Key? key, required this.currentIndex})
-      : super(key: key);
+  const CustomBottomNav({
+    Key? key,
+    required this.currentIndex,
+    required this.userEmail,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -34,19 +38,19 @@ class CustomBottomNav extends StatelessWidget {
           Widget page;
           switch (index) {
             case 0:
-              page = ExplorePage();
+              page = ExplorePage(userEmail: userEmail);
               break;
             case 1:
-              page = RecommendationPage();
+              page = RecommendationPage(userEmail: userEmail);
               break;
             case 2:
-              page = MapPage();
+              page = MapPage(userEmail: userEmail);
               break;
             case 3:
-              page = TripPlanPage();
+              page = TripPlanPage(userEmail: userEmail);
               break;
             case 4:
-              page = ProfilePage();
+              page = ProfilePage(userEmail: userEmail);
               break;
             default:
               return;
