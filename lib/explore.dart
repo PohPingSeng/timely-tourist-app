@@ -5,6 +5,7 @@ import 'profile.dart';
 import 'popular_places.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'services/firestore_service.dart';
 
 class ExplorePage extends StatefulWidget {
   final String userEmail;
@@ -31,6 +32,8 @@ class _ExplorePageState extends State<ExplorePage> {
     'Events'
   ];
   List<Map<String, dynamic>> popularPlaces = [];
+  final FirestoreService _firestoreService = FirestoreService();
+  String userName = '';
 
   // Add this map for category icons
   final Map<String, IconData> categoryIcons = {
@@ -50,6 +53,7 @@ class _ExplorePageState extends State<ExplorePage> {
   void initState() {
     super.initState();
     _loadPopularPlaces();
+    _loadUserName();
   }
 
   Future<void> _loadPopularPlaces() async {
@@ -96,6 +100,17 @@ class _ExplorePageState extends State<ExplorePage> {
     }
   }
 
+  Future<void> _loadUserName() async {
+    try {
+      final userData = await _firestoreService.getUserData(widget.userEmail);
+      setState(() {
+        userName = userData?['name'] ?? 'User';
+      });
+    } catch (e) {
+      print('Error loading user name: $e');
+    }
+  }
+
   void _applyFilters() {
     Navigator.push(
       context,
@@ -116,7 +131,8 @@ class _ExplorePageState extends State<ExplorePage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-          builder: (context) => ProfilePage(userEmail: widget.userEmail)),
+        builder: (context) => ProfilePage(userEmail: widget.userEmail),
+      ),
     );
   }
 
@@ -288,7 +304,7 @@ class _ExplorePageState extends State<ExplorePage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Hi, UserName',
+                          'Hi, $userName',
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,

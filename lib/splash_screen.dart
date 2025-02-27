@@ -1,9 +1,36 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui show PathMetric;
+import 'splash_screen_1.dart';
 import 'explore.dart';
-import 'splash_screen_interests.dart';
 
 class SplashScreen extends StatelessWidget {
+  final String userEmail;
+
+  const SplashScreen({Key? key, required this.userEmail}) : super(key: key);
+
+  void _handleGetStarted(BuildContext context) {
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            InterestsSplashScreen(userEmail: userEmail),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(1.0, 0.0),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
+            ),
+          );
+        },
+        transitionDuration: Duration(milliseconds: 300),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -78,39 +105,41 @@ class SplashScreen extends StatelessWidget {
             ),
             const SizedBox(height: 40),
 
-            // Buttons
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => InterestsSplashScreen()),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(200, 50),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(25),
+            // Get Started button
+            Column(
+              children: [
+                ElevatedButton(
+                  onPressed: () => _handleGetStarted(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(200, 50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                  ),
+                  child: const Text('Get Started'),
                 ),
-              ),
-              child: const Text('Get Started'),
-            ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () {
-                Navigator.pushReplacement(
-                  context,
-                   MaterialPageRoute(
-                          builder: (context) => ExplorePage(userEmail: 'user@example.com'),
-                        ),
-                );
-              },
-              child: const Text(
-                'Skip from now',
-                style: TextStyle(color: Colors.grey),
-              ),
+                SizedBox(height: 12),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            ExplorePage(userEmail: 'user@example.com'),
+                      ),
+                    );
+                  },
+                  child: Text(
+                    'Skip for now',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -142,7 +171,7 @@ class DottedLinePainter extends CustomPainter {
     final double dashWidth = 5.0;
     final double dashSpace = 5.0;
     double distance = 0.0;
-    
+
     for (ui.PathMetric pathMetric in path.computeMetrics()) {
       while (distance < pathMetric.length) {
         dashPath.addPath(

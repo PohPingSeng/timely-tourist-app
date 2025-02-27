@@ -16,11 +16,9 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  bool _showPassword = false;
-  String _userPassword = '';
-  String _userInterests = '';
-  String _userGender = '';
   bool _isLoading = true;
+  Map<String, dynamic>?
+      userData; // Store all user data here instead of individual fields
 
   @override
   void initState() {
@@ -30,9 +28,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _loadUserData() async {
     try {
-      setState(() {
-        _isLoading = true;
-      });
+      setState(() => _isLoading = true);
 
       final QuerySnapshot userDoc = await _firestore
           .collection('ttsUser')
@@ -43,25 +39,17 @@ class _ProfilePageState extends State<ProfilePage> {
           .get();
 
       if (userDoc.docs.isNotEmpty) {
-        final userData = userDoc.docs.first.data() as Map<String, dynamic>;
-
         setState(() {
-          _userPassword = userData['password'] ?? '';
-          _userInterests = userData['interests']?.join(', ') ?? 'Not specified';
-          _userGender = userData['gender'] ?? 'Not specified';
+          userData = userDoc.docs.first.data() as Map<String, dynamic>;
           _isLoading = false;
         });
       } else {
         print('No user document found');
-        setState(() {
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     } catch (e) {
       print('Error loading user data: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
@@ -122,48 +110,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Column(
                   children: [
-                    // Gender
-                    ListTile(
-                      leading: Icon(Icons.person_outline),
-                      title: Text('Gender'),
-                      subtitle: Text(_userGender),
-                    ),
-
-                    // Interests
-                    ListTile(
-                      leading: Icon(Icons.interests),
-                      title: Text('Interests'),
-                      subtitle: Text(_userInterests),
-                    ),
-
-                    // Email
-                    ListTile(
-                      leading: Icon(Icons.email_outlined),
-                      title: Text('Email'),
-                      subtitle: Text(widget.userEmail),
-                    ),
-
-                    // Password
-                    ListTile(
-                      leading: Icon(Icons.lock_outline),
-                      title: Text('Password'),
-                      subtitle: Text(_showPassword
-                          ? _userPassword
-                          : '•' * _userPassword.length),
-                      trailing: IconButton(
-                        icon: Icon(
-                          _showPassword
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                          color: Colors.grey,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _showPassword = !_showPassword;
-                          });
-                        },
-                      ),
-                    ),
+                    _buildProfileInformation(),
 
                     Divider(),
 
@@ -215,6 +162,71 @@ class _ProfilePageState extends State<ProfilePage> {
       bottomNavigationBar: CustomBottomNav(
         currentIndex: 4,
         userEmail: widget.userEmail,
+      ),
+    );
+  }
+
+  Widget _buildProfileInformation() {
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator());
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Profile Information',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        SizedBox(height: 16),
+        _buildInfoRow('Name', userData?['name'] ?? 'Not set'),
+        _buildInfoRow('Email', widget.userEmail),
+        _buildInfoRow('Gender', userData?['gender'] ?? 'Not set'),
+        _buildInfoRow(
+            'Personality Traits', userData?['personalityTraits'] ?? 'Not set'),
+        _buildInfoRow(
+            'Tourism Category', userData?['tourismCategory'] ?? 'Not set'),
+        _buildInfoRow(
+            'Travel Motivation',
+            (['Extraversion', 'Conscientiousness', 'Agreeableness']
+                    .contains(userData?['personalityTraits']))
+                ? 'Not applicable'
+                : (userData?['travelMotivation'] ?? 'Not set')),
+        _buildInfoRow('Travelling Concerns',
+            userData?['travellingConcerns'] ?? 'Not set'),
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
