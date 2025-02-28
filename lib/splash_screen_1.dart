@@ -367,6 +367,9 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
 
       if (userQuery.docs.isNotEmpty) {
         String docId = userQuery.docs.first.id;
+        print(
+            'Saving personality data for user: ${widget.userEmail}, docId: $docId'); // Debug log
+
         await _firestore
             .collection('ttsUser')
             .doc('UID')
@@ -375,16 +378,12 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
             .update({
           'personalityTraits': personality,
           'tourismCategory': null,
-          'travelMotivation': [
-            'Extraversion',
-            'Conscientiousness',
-            'Agreeableness'
-          ].contains(personality)
-              ? null
-              : null,
+          'travelMotivation': null,
           'travellingConcerns': null,
           'updatedAt': FieldValue.serverTimestamp(),
         });
+
+        print('Successfully saved personality: $personality'); // Debug log
       }
       setState(() {
         selectedPersonality = personality;

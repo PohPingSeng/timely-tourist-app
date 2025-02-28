@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui' as ui show PathMetric;
 import 'splash_screen_1.dart';
 import 'explore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SplashScreen extends StatelessWidget {
   final String userEmail;
@@ -29,6 +30,57 @@ class SplashScreen extends StatelessWidget {
         transitionDuration: Duration(milliseconds: 300),
       ),
     );
+  }
+
+  void _handleSkip(BuildContext context) async {
+    try {
+      // Check if user already has data in Firestore
+      final userQuery = await FirebaseFirestore.instance
+          .collection('ttsUser')
+          .doc('UID')
+          .collection('UID')
+          .where('email', isEqualTo: userEmail)
+          .limit(1)
+          .get();
+
+      // Only navigate if we found existing data or confirmed skip
+      if (userQuery.docs.isNotEmpty || await _confirmSkip(context)) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ExplorePage(userEmail: userEmail),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error checking user data: $e');
+    }
+  }
+
+  Future<bool> _confirmSkip(BuildContext context) async {
+    if (await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Skip Personalization?'),
+            content: Text(
+              'Your profile will show default values. You can always personalize later.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('Skip'),
+              ),
+            ],
+          ),
+        ) ??
+        false) {
+      return true;
+    }
+    return false;
   }
 
   @override
@@ -122,15 +174,7 @@ class SplashScreen extends StatelessWidget {
                 ),
                 SizedBox(height: 12),
                 TextButton(
-                  onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            ExplorePage(userEmail: 'user@example.com'),
-                      ),
-                    );
-                  },
+                  onPressed: () => _handleSkip(context),
                   child: Text(
                     'Skip for now',
                     style: TextStyle(
