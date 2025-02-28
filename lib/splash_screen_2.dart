@@ -22,14 +22,9 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController locationController = TextEditingController();
   String? selectedGender;
-  bool isLoading = false;
 
   Future<void> _saveUserInfo() async {
     if (_formKey.currentState!.validate() && selectedGender != null) {
-      setState(() {
-        isLoading = true;
-      });
-
       try {
         final userQuery = await FirebaseFirestore.instance
             .collection('ttsUser')
@@ -40,7 +35,9 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
 
         if (userQuery.docs.isNotEmpty) {
           String docId = userQuery.docs.first.id;
-          await FirebaseFirestore.instance
+
+          // Update in background
+          FirebaseFirestore.instance
               .collection('ttsUser')
               .doc('UID')
               .collection('UID')
@@ -52,6 +49,7 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
             'updatedAt': FieldValue.serverTimestamp(),
           });
 
+          // Navigate immediately
           if (mounted) {
             Navigator.pushReplacement(
               context,
@@ -60,18 +58,9 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
                     ResponseSummaryScreen(userEmail: widget.userEmail),
                 transitionsBuilder:
                     (context, animation, secondaryAnimation, child) {
-                  return FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(1.0, 0.0),
-                        end: Offset.zero,
-                      ).animate(animation),
-                      child: child,
-                    ),
-                  );
+                  return FadeTransition(opacity: animation, child: child);
                 },
-                transitionDuration: Duration(milliseconds: 300),
+                transitionDuration: Duration(milliseconds: 200),
               ),
             );
           }
@@ -82,12 +71,6 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
           SnackBar(
               content: Text('Failed to save information. Please try again.')),
         );
-      } finally {
-        if (mounted) {
-          setState(() {
-            isLoading = false;
-          });
-        }
       }
     }
   }
@@ -307,7 +290,7 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
                     SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: isLoading ? null : _saveUserInfo,
+                        onPressed: _saveUserInfo,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.black,
                           foregroundColor: Colors.white,

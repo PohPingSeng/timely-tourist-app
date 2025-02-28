@@ -19,7 +19,6 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
   String? selectedMotivation;
   String? selectedConcern;
   int currentQuestionIndex = 0;
-  bool isLoading = false;
 
   // Store user responses
   Map<String, dynamic> userResponses = {};
@@ -310,10 +309,6 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
   }
 
   Future<void> _storeResponse(String field, String value) async {
-    setState(() {
-      isLoading = true;
-    });
-
     try {
       // Get reference to user document
       final userQuery = await _firestore
@@ -348,15 +343,10 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to save response. Please try again.')),
       );
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
     }
   }
 
   void _handlePersonalitySelection(String personality) async {
-    setState(() => isLoading = true);
     try {
       final userQuery = await _firestore
           .collection('ttsUser')
@@ -367,10 +357,9 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
 
       if (userQuery.docs.isNotEmpty) {
         String docId = userQuery.docs.first.id;
-        print(
-            'Saving personality data for user: ${widget.userEmail}, docId: $docId'); // Debug log
 
-        await _firestore
+        // Update Firestore in background
+        _firestore
             .collection('ttsUser')
             .doc('UID')
             .collection('UID')
@@ -382,22 +371,19 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
           'travellingConcerns': null,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-
-        print('Successfully saved personality: $personality'); // Debug log
       }
+
+      // Update UI immediately
       setState(() {
         selectedPersonality = personality;
         currentQuestionIndex++;
-        isLoading = false;
       });
     } catch (e) {
       print('Error updating: $e');
-      setState(() => isLoading = false);
     }
   }
 
   void _handleCategorySelection(String category) async {
-    setState(() => isLoading = true);
     try {
       final userQuery = await _firestore
           .collection('ttsUser')
@@ -432,11 +418,9 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
         } else {
           currentQuestionIndex = 2;
         }
-        isLoading = false;
       });
     } catch (e) {
       print('Error updating: $e');
-      setState(() => isLoading = false);
     }
   }
 
@@ -447,7 +431,6 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
       return;
     }
 
-    setState(() => isLoading = true);
     try {
       final userQuery = await _firestore
           .collection('ttsUser')
@@ -471,16 +454,13 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
       setState(() {
         selectedMotivation = motivation;
         currentQuestionIndex++;
-        isLoading = false;
       });
     } catch (e) {
       print('Error updating: $e');
-      setState(() => isLoading = false);
     }
   }
 
   void _handleConcernSelection(String concern) async {
-    setState(() => isLoading = true);
     try {
       final userQuery = await _firestore
           .collection('ttsUser')
@@ -503,12 +483,10 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
       }
       setState(() {
         selectedConcern = concern;
-        isLoading = false;
         _proceedToNextScreen();
       });
     } catch (e) {
       print('Error updating: $e');
-      setState(() => isLoading = false);
     }
   }
 
@@ -525,10 +503,6 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
   }
 
   Widget _buildQuestion() {
-    if (isLoading) {
-      return Center(child: CircularProgressIndicator());
-    }
-
     switch (currentQuestionIndex) {
       case 0:
         return _buildPersonalityQuestion();
@@ -830,13 +804,11 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
                       child: Padding(
                         padding: const EdgeInsets.only(right: 8.0),
                         child: OutlinedButton(
-                          onPressed: isLoading
-                              ? null
-                              : () {
-                                  setState(() {
-                                    currentQuestionIndex--;
-                                  });
-                                },
+                          onPressed: () {
+                            setState(() {
+                              currentQuestionIndex--;
+                            });
+                          },
                           style: OutlinedButton.styleFrom(
                             padding: EdgeInsets.symmetric(vertical: 16),
                             side: BorderSide(color: Colors.black),
@@ -857,7 +829,7 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
                   // Next Button
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: (isLoading || !canProceed)
+                      onPressed: !canProceed
                           ? null
                           : () {
                               if (currentQuestionIndex < 3) {
@@ -875,23 +847,11 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        // Grey out button when disabled
-                        disabledBackgroundColor: Colors.grey[300],
                       ),
-                      child: isLoading
-                          ? SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : Text(
-                              'Next >',
-                              style: TextStyle(fontSize: 16),
-                            ),
+                      child: Text(
+                        'Next >',
+                        style: TextStyle(fontSize: 16),
+                      ),
                     ),
                   ),
                 ],
@@ -905,8 +865,6 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
 
   // Update _buildQuestionTitle to show correct questions
   Widget _buildQuestionTitle() {
-    if (isLoading) return Container();
-
     switch (currentQuestionIndex) {
       case 0:
         return Text(
@@ -981,10 +939,6 @@ class _InterestsSplashScreenState extends State<InterestsSplashScreen> {
 
   // Update _buildAnswerOptions to handle different flows
   Widget _buildAnswerOptions() {
-    if (isLoading) {
-      return Center(child: CircularProgressIndicator());
-    }
-
     switch (currentQuestionIndex) {
       case 0:
         return _buildOptionsList([

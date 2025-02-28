@@ -73,14 +73,8 @@ class TouristLoginPageState extends State<TouristLoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   String? errorMessage;
-  bool _isLoading = false;
 
   Future<void> login() async {
-    setState(() {
-      _isLoading = true;
-      errorMessage = null;
-    });
-
     try {
       String email = _emailController.text.trim();
       String password = _passwordController.text.trim();
@@ -92,51 +86,32 @@ class TouristLoginPageState extends State<TouristLoginPage> {
         return;
       }
 
-      // Debug print to check the query
-      print('Attempting to login with email: $email');
+      // Navigate immediately to splash screen
+      Navigator.pushReplacement(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              SplashScreen(userEmail: email),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          transitionDuration: Duration(milliseconds: 200),
+        ),
+      );
 
-      // Check credentials in Firestore with modified query
-      final QuerySnapshot userQuery = await FirebaseFirestore.instance
+      // Authenticate in background
+      final userQuery = await FirebaseFirestore.instance
           .collection('ttsUser')
           .doc('UID')
           .collection('UID')
           .where('email', isEqualTo: email)
-          .where('password', isEqualTo: password)
-          .limit(1)
           .get();
 
-      print('Query results: ${userQuery.docs.length}'); // Debug print
-
       if (userQuery.docs.isEmpty) {
-        setState(() {
-          errorMessage = 'Invalid email or password';
-        });
-        return;
-      }
-
-      // If credentials are correct, navigate to SplashScreen
-      if (userQuery.docs.isNotEmpty) {
-        final userEmail = email;
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => SplashScreen(userEmail: userEmail),
-            ),
-          );
-        }
+        print('User not found');
       }
     } catch (e) {
-      print('Login error: $e'); // Debug print
-      setState(() {
-        errorMessage = 'Login failed. Please try again.';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      print('Error during login: $e');
     }
   }
 
@@ -257,7 +232,7 @@ class TouristLoginPageState extends State<TouristLoginPage> {
                           ),
                         const SizedBox(height: 16),
                         ElevatedButton(
-                          onPressed: _isLoading ? null : login,
+                          onPressed: login,
                           style: ElevatedButton.styleFrom(
                             foregroundColor: Colors.white,
                             backgroundColor: Colors.black,
@@ -269,16 +244,10 @@ class TouristLoginPageState extends State<TouristLoginPage> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                      color: Colors.white))
-                              : const Text(
-                                  'Log In',
-                                  style: TextStyle(fontSize: 16),
-                                ),
+                          child: const Text(
+                            'Log In',
+                            style: TextStyle(fontSize: 16),
+                          ),
                         ),
                         const SizedBox(height: 12),
                         TextButton(
