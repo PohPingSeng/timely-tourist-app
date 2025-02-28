@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -17,38 +18,51 @@ class _ProfilePageState extends State<ProfilePage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   bool _isLoading = true;
-  Map<String, dynamic>?
-      userData; // Store all user data here instead of individual fields
+  Map<String, dynamic>? userData;
+  StreamSubscription<QuerySnapshot>? _userDataSubscription;
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _setupUserDataListener();
   }
 
-  Future<void> _loadUserData() async {
-    try {
-      setState(() => _isLoading = true);
+  @override
+  void dispose() {
+    _userDataSubscription?.cancel();
+    super.dispose();
+  }
 
-      final QuerySnapshot userDoc = await _firestore
+  void _setupUserDataListener() {
+    try {
+      _userDataSubscription = _firestore
           .collection('ttsUser')
           .doc('UID')
           .collection('UID')
           .where('email', isEqualTo: widget.userEmail)
           .limit(1)
-          .get();
-
-      if (userDoc.docs.isNotEmpty) {
-        setState(() {
-          userData = userDoc.docs.first.data() as Map<String, dynamic>;
-          _isLoading = false;
-        });
-      } else {
-        print('No user document found');
-        setState(() => _isLoading = false);
-      }
+          .snapshots()
+          .listen(
+        (snapshot) {
+          if (snapshot.docs.isNotEmpty && mounted) {
+            setState(() {
+              userData = snapshot.docs.first.data();
+              _isLoading = false;
+            });
+          } else {
+            setState(() {
+              userData = null;
+              _isLoading = false;
+            });
+          }
+        },
+        onError: (error) {
+          print('Error listening to user data: $error');
+          setState(() => _isLoading = false);
+        },
+      );
     } catch (e) {
-      print('Error loading user data: $e');
+      print('Error setting up user data listener: $e');
       setState(() => _isLoading = false);
     }
   }
