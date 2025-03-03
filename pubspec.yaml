@@ -36,24 +36,21 @@ dependencies:
   cloud_firestore: ^4.13.6
   firebase_app_check: ^0.2.1+14
   google_maps_flutter: ^2.5.3
-  http: ^1.1.0
+  http: ^0.13.6
   geocoding: ^2.1.1
   geolocator: ^10.1.0
   location: ^5.0.0
   permission_handler: ^10.0.0
   package_info_plus: ^4.0.0
+  socket_io_client: ^2.0.0
+  google_maps_webservice: ^0.0.20-nullsafety.5
+  carousel_slider: ^4.2.1
 
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
- # Path to your app icon
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
-  flutter_lints: ^4.0.0
+  flutter_lints: ^2.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
