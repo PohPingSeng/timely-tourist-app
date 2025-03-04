@@ -76,7 +76,7 @@ class CustomBottomNav extends StatelessWidget {
         items: [
           _buildNavItem(Icons.explore_outlined, Icons.explore, 'Explore',
               0 == currentIndex),
-          _buildNavItem(Icons.lightbulb_outline, Icons.lightbulb, 'Recommended',
+          _buildNavItem(Icons.lightbulb_outline, Icons.lightbulb, 'For you',
               1 == currentIndex),
           _buildAINavItem(currentIndex == 2),
           _buildNavItem(
