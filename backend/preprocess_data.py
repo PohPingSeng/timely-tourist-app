@@ -12,10 +12,11 @@ df = pd.read_csv(file_path, header=0)
 df = df.dropna(how="all")
 df = df.dropna(axis=1, how="all")
 
-# Fill missing values
+# Fill missing values except for Place ID (we want to keep Place ID as is)
 for column in df.columns:
-    if df[column].dtype == "object":
-        df[column] = df[column].fillna(df[column].mode()[0])
+    if column != 'Place ID':  # Don't fill Place ID
+        if df[column].dtype == "object":
+            df[column] = df[column].fillna(df[column].mode()[0])
 
 # Create location groups based on personality and preferences
 df['location_group'] = df.apply(
@@ -59,12 +60,24 @@ X_train, X_test, y_train, y_test = train_test_split(
     stratify=y
 )
 
+# Modify the location groups creation to properly include place IDs
+location_groups = {}
+for group_name, group_df in df.groupby('location_group'):
+    locations = []
+    for _, row in group_df.iterrows():
+        location_data = {
+            "name": row['Location'],
+            "place_id": row['Place ID']  # Changed from row.get('place_id', None)
+        }
+        locations.append(location_data)
+    location_groups[group_name] = locations
+
 # Save the processed data and metadata
 joblib.dump((X_train, X_test, y_train, y_test), "processed_data.pkl")
 joblib.dump({
     'location_encoder': le_location,
     'feature_columns': binary_features,
-    'location_groups': df[['location_group', 'Location']].groupby('location_group')['Location'].apply(list).to_dict()
+    'location_groups': location_groups
 }, "model_metadata.pkl")
 
 print("\n=== Dataset Information ===")
@@ -74,14 +87,14 @@ print(f"Number of unique location groups: {len(df['location_group'].unique())}")
 print(f"Training samples: {X_train.shape[0]}")
 print(f"Testing samples: {X_test.shape[0]}")
 
-# Print some example groups
-print("\n=== Example Location Groups ===")
-location_groups = df.groupby('location_group')['Location'].apply(list)
-for group, locations in list(location_groups.items())[:3]:
-    print(f"\nGroup: {group}")
+# Print some example groups to verify
+print("\n=== Example Location Groups with Place IDs ===")
+for group_name, locations in list(location_groups.items())[:3]:
+    print(f"\nGroup: {group_name}")
     print("Locations:")
     for loc in locations[:3]:  # Show first 3 locations per group
-        print(f"- {loc}")
+        print(f"- Name: {loc['name']}")
+        print(f"  Place ID: {loc['place_id']}")
 
 # Print feature names
 print("\n=== Features Used ===")
