@@ -115,26 +115,86 @@ class RecommendationService {
 
   Future<List<Map<String, dynamic>>> _enrichWithPlaceDetails(
       List<Map<String, dynamic>> recommendations) async {
+    print(
+        'Debug: Starting to enrich ${recommendations.length} recommendations');
     List<Map<String, dynamic>> enrichedRecommendations = [];
 
     for (var rec in recommendations) {
       try {
+        print(
+            'Debug: Processing recommendation: ${rec['name']} with place_id: ${rec['place_id']}');
+
+        if (rec['place_id'] != null) {
+          final details = await placesApi.getDetailsByPlaceId(rec['place_id']);
+          print('Debug: Place API response status: ${details.status}');
+
+          if (details.status == 'OK') {
+            final place = details.result;
+            final enrichedRec = {
+              ...rec,
+              'name': place.name,
+              'location': place.formattedAddress,
+              'place_id': place.placeId,
+              'rating': place.rating,
+              'user_ratings_total':
+                  details.result.toJson()['user_ratings_total'],
+              'image': place.photos?.isNotEmpty == true
+                  ? 'https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos!.first.photoReference}&key=AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts'
+                  : null,
+            };
+            print('Debug: Enriched data: $enrichedRec');
+            enrichedRecommendations.add(enrichedRec);
+            continue;
+          }
+        }
+
+        print('Debug: Falling back to search by text for: ${rec['location']}');
+        // Fallback to search by text if place_id lookup fails
         final response = await placesApi.searchByText(rec['location']);
         if (response.results.isNotEmpty) {
           final place = response.results.first;
+          // Fetch full place details to get reviews
+          final details = await placesApi.getDetailsByPlaceId(place.placeId);
+          final placeDetails = details.result;
+
           enrichedRecommendations.add({
             ...rec,
+            'name': place.name,
+            'location': place.formattedAddress,
+            'place_id': place.placeId,
             'image': place.photos.isNotEmpty
                 ? 'https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos.first.photoReference}&key=AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts'
                 : null,
             'rating': place.rating,
-            'location': place.formattedAddress,
+            'reviews':
+                placeDetails.reviews ?? [], // Get reviews from place details
             'opening_hours': place.openingHours?.periods,
             'is_open': place.openingHours?.openNow,
+            'geometry': {
+              'lat': place.geometry?.location.lat,
+              'lng': place.geometry?.location.lng,
+            },
+          });
+        } else {
+          enrichedRecommendations.add({
+            ...rec,
+            'name': rec['name'] ??
+                rec['location'] ??
+                'Unknown location', // Try name first
+            'place_id': null,
+            'image': null,
           });
         }
       } catch (e) {
         print('Error enriching place details: $e');
+        enrichedRecommendations.add({
+          ...rec,
+          'name': rec['name'] ??
+              rec['location'] ??
+              'Unknown location', // Try name first
+          'place_id': null,
+          'image': null,
+        });
       }
     }
 

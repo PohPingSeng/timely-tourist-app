@@ -184,18 +184,36 @@ class _RecommendationPageState extends State<RecommendationPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  place['location'] ?? 'Unknown location',
+                  place['name'] ?? 'Unknown location',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                SizedBox(height: 8),
+                SizedBox(height: 4),
+                if (place['location'] != null) ...[
+                  Text(
+                    place['location'],
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 8),
+                ],
                 Row(
                   children: [
                     Icon(Icons.access_time, size: 16),
                     SizedBox(width: 4),
                     Text(place['is_open'] == true ? 'Open now' : 'Closed'),
+                    if (place['rating'] != null) ...[
+                      SizedBox(width: 16),
+                      Icon(Icons.star, size: 16, color: Colors.amber),
+                      SizedBox(width: 4),
+                      Text(place['rating'].toString()),
+                    ],
                   ],
                 ),
                 SizedBox(height: 12),

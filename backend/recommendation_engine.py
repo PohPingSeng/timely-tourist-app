@@ -42,11 +42,11 @@ class RecommendationEngine:
         return features.reshape(1, -1)
 
     def get_recommendations(self, 
-                            personality_traits: str,
-                            tourism_category: str,
-                            travel_motivation: str = None,
-                            travelling_concerns: str = None,
-                            num_recommendations: int = 5) -> List[Dict[str, Any]]:
+                          personality_traits: str,
+                          tourism_category: str,
+                          travel_motivation: str = None,
+                          travelling_concerns: str = None,
+                          num_recommendations: int = 5) -> List[Dict[str, Any]]:
         """
         Get location recommendations based on user preferences
         """
@@ -60,7 +60,6 @@ class RecommendationEngine:
         user_preferences = {k: v for k, v in user_preferences.items() if v is not None}
         features = self._create_feature_vector(user_preferences)
         
-        # Scale features safely
         try:
             features_scaled = self.scaler.transform(features)
             if features_scaled.shape[1] != len(self.feature_columns):
@@ -69,14 +68,18 @@ class RecommendationEngine:
             print(f"Error during feature scaling: {str(e)}")
             return []
         
-        # Get prediction
         try:
             group_id = self.model.predict(features_scaled)[0]
             group_name = self.metadata.get('location_encoder', {}).inverse_transform([group_id])[0]
-            locations = self.metadata['location_groups'].get(group_name, [])
-        except KeyError:
-            print("Error: Group ID not found in location encoder.")
-            return []
+            locations_data = self.metadata['location_groups'].get(group_name, [])
+            
+            # Check if locations_data is a list of dicts or just strings
+            if locations_data and isinstance(locations_data[0], dict):
+                locations = locations_data
+            else:
+                # Convert simple location strings to dicts
+                locations = [{"name": loc, "place_id": None} for loc in locations_data]
+            
         except Exception as e:
             print(f"Error getting recommendations: {str(e)}")
             return []
@@ -88,7 +91,9 @@ class RecommendationEngine:
         recommendations = []
         for location in locations[:num_recommendations]:
             recommendation = {
-                "location": location,
+                "name": location["name"],
+                "location": location["name"],
+                "place_id": location["place_id"],
                 "group": group_name,
                 "personality_match": personality_traits,
                 "category": tourism_category
@@ -99,6 +104,7 @@ class RecommendationEngine:
                 recommendation["concerns"] = travelling_concerns
             
             recommendations.append(recommendation)
+            print(f"Debug: Added recommendation: {recommendation}")
         
         return recommendations
 
