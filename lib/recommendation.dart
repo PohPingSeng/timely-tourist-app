@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'widgets/custom_bottom_nav.dart';
 import 'services/recommendation_service.dart';
+import 'tour_details_page.dart';
 
 class RecommendationPage extends StatefulWidget {
   final String userEmail;
@@ -14,29 +15,26 @@ class RecommendationPage extends StatefulWidget {
 
 class _RecommendationPageState extends State<RecommendationPage> {
   final RecommendationService _recommendationService = RecommendationService();
-  List<Map<String, dynamic>>? recommendations;
-  List<Map<String, dynamic>>? filteredRecommendations;
+  List<Map<String, dynamic>> recommendations = [];
+  List<Map<String, dynamic>> filteredRecommendations = [];
   String selectedFilter = 'Any time';
 
   @override
   void initState() {
     super.initState();
-    print('🔴 RECOMMENDATION SCREEN INITIALIZED');
     _loadRecommendations();
   }
 
   Future<void> _loadRecommendations() async {
-    print('🔴 LOADING RECOMMENDATIONS');
     try {
       final recs =
           await _recommendationService.getRecommendations(widget.userEmail);
-      print('🔴 RECOMMENDATIONS LOADED: ${recs.length}');
       setState(() {
         recommendations = recs;
         _applyFilter(selectedFilter);
       });
     } catch (e) {
-      print('🔴 ERROR LOADING RECOMMENDATIONS: $e');
+      print('Error loading recommendations: $e');
       setState(() {
         recommendations = [];
         filteredRecommendations = [];
@@ -45,18 +43,16 @@ class _RecommendationPageState extends State<RecommendationPage> {
   }
 
   void _applyFilter(String filter) {
-    if (recommendations == null) return;
-
     setState(() {
       selectedFilter = filter;
       switch (filter) {
         case 'Open now':
-          filteredRecommendations = recommendations!
+          filteredRecommendations = recommendations
               .where((place) => place['is_open'] == true)
               .toList();
           break;
         case '24 hours':
-          filteredRecommendations = recommendations!
+          filteredRecommendations = recommendations
               .where((place) =>
                   place['opening_hours']?.any((period) =>
                       period['open']['day'] == period['close']['day'] &&
@@ -67,7 +63,7 @@ class _RecommendationPageState extends State<RecommendationPage> {
           break;
         case 'Any time':
         default:
-          filteredRecommendations = List.from(recommendations!);
+          filteredRecommendations = List.from(recommendations);
       }
     });
   }
@@ -132,19 +128,17 @@ class _RecommendationPageState extends State<RecommendationPage> {
               ),
             ),
             Expanded(
-              child: recommendations == null
-                  ? Center(child: CircularProgressIndicator())
-                  : filteredRecommendations!.isEmpty
-                      ? Center(child: Text('No recommendations found'))
-                      : ListView.builder(
-                          itemCount: filteredRecommendations!.length,
-                          padding: EdgeInsets.symmetric(horizontal: 16),
-                          physics: ClampingScrollPhysics(),
-                          itemBuilder: (context, index) {
-                            final place = filteredRecommendations![index];
-                            return _buildPlaceCard(place);
-                          },
-                        ),
+              child: filteredRecommendations.isEmpty
+                  ? Center(child: Text('No recommendations found'))
+                  : ListView.builder(
+                      itemCount: filteredRecommendations.length,
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      physics: ClampingScrollPhysics(),
+                      itemBuilder: (context, index) {
+                        final place = filteredRecommendations[index];
+                        return _buildPlaceCard(place);
+                      },
+                    ),
             ),
           ],
         ),
@@ -217,7 +211,13 @@ class _RecommendationPageState extends State<RecommendationPage> {
                     ),
                     TextButton(
                       onPressed: () {
-                        // TODO: Implement more details
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                TourDetailsPage(tourData: place),
+                          ),
+                        );
                       },
                       child: Text('More Details'),
                     ),
