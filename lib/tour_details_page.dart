@@ -387,18 +387,153 @@ class _TourDetailsPageState extends State<TourDetailsPage> {
   }
 
   Widget _buildNearbyPlaces() {
-    if (_placeDetails?.geometry?.location == null) return SizedBox.shrink();
-
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Nearby Places', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          // TODO: Implement nearby places search
-          Text('Coming soon...'),
+          Text('You might also like...',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 16),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildTourCard(
+                  image: 'https://example.com/food-tour.jpg',
+                  title:
+                      'Kuala Lumpur: Sambal Street Food Tour with 15+ Tastings',
+                  duration: '4 hours',
+                  groupType: 'Small group',
+                  rating: 4.9,
+                  reviewCount: 987,
+                  price: 229.90,
+                ),
+                _buildTourCard(
+                  image: 'https://example.com/melaka.jpg',
+                  title:
+                      'From Kuala Lumpur: Historical Melaka Day Tour with Lunch',
+                  duration: '10 hours',
+                  groupType: 'Pickup available',
+                  rating: 4.4,
+                  reviewCount: 2051,
+                  price: 170.00,
+                ),
+                // Add more cards as needed
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTourCard({
+    required String image,
+    required String title,
+    required String duration,
+    required String groupType,
+    required double rating,
+    required int reviewCount,
+    required double price,
+  }) {
+    return Container(
+      width: 280,
+      margin: EdgeInsets.only(right: 16),
+      child: Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            ClipRRect(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              child: Image.network(
+                image,
+                height: 160,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    height: 160,
+                    color: Colors.grey[200],
+                    child: Icon(Icons.image, size: 50, color: Colors.grey),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Tour Type Label
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'GUIDED TOUR',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  // Title
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 8),
+                  // Duration and Group Type
+                  Text(
+                    '$duration • $groupType',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 14,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  // Rating and Price
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.star, color: Colors.amber, size: 20),
+                          Text(
+                            ' $rating',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            ' ($reviewCount)',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        'From RM ${price.toStringAsFixed(2)}',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
