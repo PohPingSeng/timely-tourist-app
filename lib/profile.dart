@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'widgets/custom_bottom_nav.dart';
 import 'main.dart';
+import 'wishlist_page.dart';
+import 'utils/page_transitions.dart';
 
 class ProfilePage extends StatefulWidget {
   final String userEmail;
@@ -17,7 +19,6 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  bool _isLoading = true;
   Map<String, dynamic>? userData;
   StreamSubscription<QuerySnapshot>? _userDataSubscription;
 
@@ -47,23 +48,19 @@ class _ProfilePageState extends State<ProfilePage> {
           if (snapshot.docs.isNotEmpty && mounted) {
             setState(() {
               userData = snapshot.docs.first.data();
-              _isLoading = false;
             });
           } else {
             setState(() {
               userData = null;
-              _isLoading = false;
             });
           }
         },
         onError: (error) {
           print('Error listening to user data: $error');
-          setState(() => _isLoading = false);
         },
       );
     } catch (e) {
       print('Error setting up user data listener: $e');
-      setState(() => _isLoading = false);
     }
   }
 
@@ -84,14 +81,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -134,7 +123,12 @@ class _ProfilePageState extends State<ProfilePage> {
                       title: Text('Wishlist'),
                       trailing: Icon(Icons.chevron_right),
                       onTap: () {
-                        // Navigate to wishlist
+                        Navigator.push(
+                          context,
+                          SlidePageRoute(
+                            page: WishlistPage(userEmail: widget.userEmail),
+                          ),
+                        );
                       },
                     ),
 
@@ -181,10 +175,6 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildProfileInformation() {
-    if (_isLoading) {
-      return Center(child: CircularProgressIndicator());
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

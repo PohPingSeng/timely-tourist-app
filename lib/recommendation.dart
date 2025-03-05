@@ -129,7 +129,41 @@ class _RecommendationPageState extends State<RecommendationPage> {
             ),
             Expanded(
               child: filteredRecommendations.isEmpty
-                  ? Center(child: Text('No recommendations found'))
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.search_off_rounded,
+                            size: 64,
+                            color: Colors.grey[400],
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'No recommendations found',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          SizedBox(height: 24),
+                          ElevatedButton.icon(
+                            onPressed: _loadRecommendations,
+                            icon: Icon(Icons.refresh),
+                            label: Text('Refresh'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
                   : ListView.builder(
                       itemCount: filteredRecommendations.length,
                       padding: EdgeInsets.symmetric(horizontal: 16),
@@ -232,8 +266,10 @@ class _RecommendationPageState extends State<RecommendationPage> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) =>
-                                TourDetailsPage(tourData: place),
+                            builder: (context) => TourDetailsPage(
+                              tourData: place,
+                              userEmail: widget.userEmail,
+                            ),
                           ),
                         );
                       },
