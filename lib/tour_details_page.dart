@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:google_maps_webservice/places.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class TourDetailsPage extends StatefulWidget {
   final Map<String, dynamic> tourData;
+  final String userEmail;
 
-  const TourDetailsPage({Key? key, required this.tourData}) : super(key: key);
+  const TourDetailsPage({
+    Key? key,
+    required this.tourData,
+    required this.userEmail,
+  }) : super(key: key);
 
   @override
   _TourDetailsPageState createState() => _TourDetailsPageState();
@@ -13,10 +19,11 @@ class TourDetailsPage extends StatefulWidget {
 
 class _TourDetailsPageState extends State<TourDetailsPage> {
   int _currentImageIndex = 0;
-  bool _isWishlisted = false;
+  bool _isInWishlist = false;
   final _placesApiKey = 'AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts';
   late final GoogleMapsPlaces _places;
   PlaceDetails? _placeDetails;
+  final _firestore = FirebaseFirestore.instance;
 
   @override
   void initState() {
@@ -24,6 +31,7 @@ class _TourDetailsPageState extends State<TourDetailsPage> {
     _places = GoogleMapsPlaces(apiKey: _placesApiKey);
     print('Debug: Initial tourData: ${widget.tourData}');
     _fetchPlaceDetails();
+    _checkWishlistStatus();
   }
 
   Future<void> _fetchPlaceDetails() async {
@@ -79,6 +87,97 @@ class _TourDetailsPageState extends State<TourDetailsPage> {
     }
   }
 
+  Future<void> _checkWishlistStatus() async {
+    try {
+      final userDoc = await _firestore
+          .collection('ttsUser')
+          .doc('UID')
+          .collection('UID')
+          .doc(widget.userEmail) // Use email as document ID
+          .get();
+
+      if (userDoc.exists) {
+        final wishlist = userDoc.get('wishlist') ?? [];
+        setState(() {
+          _isInWishlist = wishlist.contains(widget.tourData['place_id']);
+        });
+      }
+    } catch (e) {
+      print('Error checking wishlist status: $e');
+    }
+  }
+
+  Future<void> _toggleWishlist() async {
+    try {
+      final placeId = widget.tourData['place_id'];
+      final userEmail = widget.userEmail;
+
+      print('Debug: Attempting to toggle wishlist for place: $placeId');
+
+      // First, try to save place data
+      try {
+        await _firestore.collection('places').doc(placeId).set({
+          'place_id': placeId,
+          'name': widget.tourData['name'],
+          'location': widget.tourData['location'],
+          'image': widget.tourData['image'],
+          'rating': widget.tourData['rating'],
+          'is_open': widget.tourData['is_open'],
+        }, SetOptions(merge: true));
+        print('Debug: Place data saved successfully');
+      } catch (e) {
+        print('Debug: Error saving place data: $e');
+        throw e;
+      }
+
+      // Then update wishlist
+      try {
+        final userDocRef = _firestore
+            .collection('ttsUser')
+            .doc('UID')
+            .collection('UID')
+            .doc(userEmail);
+
+        final userDoc = await userDocRef.get();
+        List<String> wishlist = [];
+
+        if (userDoc.exists) {
+          wishlist = List<String>.from(userDoc.get('wishlist') ?? []);
+        }
+
+        if (_isInWishlist) {
+          wishlist.remove(placeId);
+        } else {
+          wishlist.add(placeId);
+        }
+
+        print('Debug: Updating wishlist: $wishlist');
+
+        await userDocRef.set({
+          'email': userEmail,
+          'wishlist': wishlist,
+        }, SetOptions(merge: true));
+
+        setState(() {
+          _isInWishlist = !_isInWishlist;
+        });
+        print('Debug: Wishlist updated successfully');
+      } catch (e) {
+        print('Debug: Error updating wishlist: $e');
+        throw e;
+      }
+    } catch (e) {
+      print('Error toggling wishlist: $e');
+      // Show error to user
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update wishlist'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _places.dispose();
@@ -118,8 +217,11 @@ class _TourDetailsPageState extends State<TourDetailsPage> {
       ),
       actions: [
         IconButton(
-          icon: Icon(_isWishlisted ? Icons.favorite : Icons.favorite_border),
-          onPressed: () => setState(() => _isWishlisted = !_isWishlisted),
+          icon: Icon(
+            _isInWishlist ? Icons.favorite : Icons.favorite_border,
+            color: _isInWishlist ? Colors.red[300] : null,
+          ),
+          onPressed: _toggleWishlist,
         ),
         IconButton(
           icon: const Icon(Icons.share),
