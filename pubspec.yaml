@@ -46,6 +46,7 @@ dependencies:
   google_maps_webservice: ^0.0.20-nullsafety.5
   carousel_slider: ^4.2.1
   share_plus: ^7.2.1
+  shared_preferences: ^2.2.2
 
 
 dev_dependencies:
