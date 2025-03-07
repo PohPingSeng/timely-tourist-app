@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'widgets/custom_bottom_nav.dart';
 import 'services/recommendation_service.dart';
 import 'tour_details_page.dart';
+import 'tripPlan.dart';
+import 'services/recommendation_cache_service.dart';
 
 class RecommendationPage extends StatefulWidget {
   final String userEmail;
@@ -15,6 +17,7 @@ class RecommendationPage extends StatefulWidget {
 
 class _RecommendationPageState extends State<RecommendationPage> {
   final RecommendationService _recommendationService = RecommendationService();
+  final RecommendationCacheService _cacheService = RecommendationCacheService();
   List<Map<String, dynamic>> recommendations = [];
   List<Map<String, dynamic>> filteredRecommendations = [];
   String selectedFilter = 'Any time';
@@ -22,24 +25,48 @@ class _RecommendationPageState extends State<RecommendationPage> {
   @override
   void initState() {
     super.initState();
-    _loadRecommendations();
+    _loadCachedRecommendations();
+    _refreshRecommendations();
   }
 
-  Future<void> _loadRecommendations() async {
-    try {
-      final recs =
-          await _recommendationService.getRecommendations(widget.userEmail);
+  Future<void> _loadCachedRecommendations() async {
+    final cached = await _cacheService.getCachedRecommendations();
+    if (cached.isNotEmpty) {
       setState(() {
-        recommendations = recs;
+        recommendations = cached;
         _applyFilter(selectedFilter);
       });
+    }
+  }
+
+  Future<void> _refreshRecommendations() async {
+    try {
+      if (!_cacheService.needsRefresh && recommendations.isNotEmpty) {
+        return;
+      }
+
+      final recs =
+          await _recommendationService.getRecommendations(widget.userEmail);
+
+      if (!_areRecommendationsEqual(recs, recommendations)) {
+        setState(() {
+          recommendations = recs;
+          _applyFilter(selectedFilter);
+        });
+        await _cacheService.cacheRecommendations(recs);
+      }
     } catch (e) {
       print('Error loading recommendations: $e');
-      setState(() {
-        recommendations = [];
-        filteredRecommendations = [];
-      });
     }
+  }
+
+  bool _areRecommendationsEqual(
+      List<Map<String, dynamic>> a, List<Map<String, dynamic>> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i]['place_id'] != b[i]['place_id']) return false;
+    }
+    return true;
   }
 
   void _applyFilter(String filter) {
@@ -128,51 +155,20 @@ class _RecommendationPageState extends State<RecommendationPage> {
               ),
             ),
             Expanded(
-              child: filteredRecommendations.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.search_off_rounded,
-                            size: 64,
-                            color: Colors.grey[400],
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            'No recommendations found',
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          SizedBox(height: 24),
-                          ElevatedButton.icon(
-                            onPressed: _loadRecommendations,
-                            icon: Icon(Icons.refresh),
-                            label: Text('Refresh'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              foregroundColor: Colors.white,
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
-                            ),
-                          ),
-                        ],
+              child: RefreshIndicator(
+                onRefresh: _refreshRecommendations,
+                child: filteredRecommendations.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                        itemCount: filteredRecommendations.length,
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        physics: AlwaysScrollableScrollPhysics(),
+                        itemBuilder: (context, index) {
+                          final place = filteredRecommendations[index];
+                          return _buildPlaceCard(place);
+                        },
                       ),
-                    )
-                  : ListView.builder(
-                      itemCount: filteredRecommendations.length,
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      physics: ClampingScrollPhysics(),
-                      itemBuilder: (context, index) {
-                        final place = filteredRecommendations[index];
-                        return _buildPlaceCard(place);
-                      },
-                    ),
+              ),
             ),
           ],
         ),
@@ -180,6 +176,44 @@ class _RecommendationPageState extends State<RecommendationPage> {
       bottomNavigationBar: CustomBottomNav(
         currentIndex: 1,
         userEmail: widget.userEmail,
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.search_off_rounded,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          SizedBox(height: 16),
+          Text(
+            'No recommendations found',
+            style: TextStyle(
+              fontSize: 18,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _refreshRecommendations,
+            icon: Icon(Icons.refresh),
+            label: Text('Refresh'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 12,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -255,8 +289,20 @@ class _RecommendationPageState extends State<RecommendationPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     TextButton.icon(
-                      onPressed: () {
-                        // TODO: Implement add to trip
+                      onPressed: () async {
+                        // Navigate to TripPlan and add the new location
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TripPlanPage(
+                              userEmail: widget.userEmail,
+                              initialPlace: {
+                                'place_id': place['place_id'],
+                                'name': place['name'],
+                              },
+                            ),
+                          ),
+                        );
                       },
                       icon: Icon(Icons.add),
                       label: Text('Add to my trip'),
