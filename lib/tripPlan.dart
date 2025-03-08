@@ -160,21 +160,36 @@ class _TripPlanPageState extends State<TripPlanPage> {
 
   void _deleteLocation(int index) {
     setState(() {
+      // Remove the location
       _selectedLocations.removeAt(index);
       _tripStateManager.removeLocation(index);
+
+      // Remove the corresponding controller and focus node
+      _locationControllers[index].dispose();
       _locationControllers.removeAt(index);
+      _locationFocusNodes[index].dispose();
       _locationFocusNodes.removeAt(index);
 
+      // Update the text in the remaining controllers
       for (int i = index; i < _selectedLocations.length; i++) {
         _locationControllers[i].text = _selectedLocations[i].name;
       }
 
+      // Ensure there's always at least one empty input field
       if (_locationControllers.isEmpty) {
         _locationControllers.add(TextEditingController());
         _locationFocusNodes.add(FocusNode());
         _setupLocationInput(0);
       }
 
+      // Clear the last controller if it's not empty
+      if (_locationControllers.last.text.isNotEmpty) {
+        _locationControllers.add(TextEditingController());
+        _locationFocusNodes.add(FocusNode());
+        _setupLocationInput(_locationControllers.length - 1);
+      }
+
+      // Update map and routes
       _updateMapMarkers();
       _updateRoutes();
     });
@@ -362,6 +377,14 @@ class _TripPlanPageState extends State<TripPlanPage> {
                           builder: (context) => TransportationRoutePage(
                             locations: _selectedLocations,
                             userEmail: widget.userEmail,
+                            onLocationRemoved: (location) {
+                              final index = _selectedLocations.indexWhere(
+                                (loc) => loc.placeId == location.placeId
+                              );
+                              if (index != -1) {
+                                _deleteLocation(index);
+                              }
+                            },
                           ),
                         ),
                       );
