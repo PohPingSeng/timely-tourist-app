@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:math';
 import 'widgets/custom_bottom_nav.dart';
 import 'models/trip_location.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'services/trip_state_manager.dart';
+import 'services/map_cache_service.dart';
+import 'transportation_route.dart';
 
 class TripPlanPage extends StatefulWidget {
   final String userEmail;
@@ -29,19 +31,19 @@ class _TripPlanPageState extends State<TripPlanPage> {
   Set<Marker> _markers = {};
   final String _placesApiKey = 'AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts';
   bool _showSearchResults = false;
-  final FocusNode _searchFocusNode = FocusNode();
   List<TextEditingController> _locationControllers = [TextEditingController()];
   List<FocusNode> _locationFocusNodes = [FocusNode()];
   int _activeSearchIndex = -1;
   Map<int, List<dynamic>> _searchResultsMap = {};
   final TripStateManager _tripStateManager = TripStateManager();
+  bool _isMapExpanded = false;
+  final MapCacheService _mapCache = MapCacheService();
 
   @override
   void initState() {
     super.initState();
-
-    // First restore any existing locations
     _restoreLocations();
+    _initializeMap();
 
     // Then add new location if provided
     if (widget.initialPlace != null) {
@@ -49,6 +51,20 @@ class _TripPlanPageState extends State<TripPlanPage> {
         _addInitialPlace();
       });
     }
+  }
+
+  Future<void> _initializeMap() async {
+    final initialPosition = await _mapCache.getInitialPosition();
+    if (_mapController != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newCameraPosition(initialPosition),
+      );
+    }
+
+    // Restore cached markers
+    setState(() {
+      _markers = _mapCache.getCachedMarkers();
+    });
   }
 
   void _setupLocationInput(int index) {
@@ -191,268 +207,382 @@ class _TripPlanPageState extends State<TripPlanPage> {
       onTap: _handleTapOutside,
       child: Scaffold(
         body: SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
+          child: _isMapExpanded
+              ? _buildExpandedMap()
+              : SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'My Trip',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 16),
-                      Container(
-                        height: 200,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: GoogleMap(
-                            initialCameraPosition: CameraPosition(
-                              target: LatLng(4.2105, 101.9758),
-                              zoom: 6,
-                            ),
-                            markers: _markers,
-                            polylines: _routes,
-                            onMapCreated: (controller) {
-                              _mapController = controller;
-                            },
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text(
+                          'My Trip',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
-                      SizedBox(height: 16),
-                      Text(
-                        'Where do you want to go?',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black12,
-                                    blurRadius: 4,
-                                    offset: Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: TextField(
-                                controller: _locationControllers[0],
-                                focusNode: _locationFocusNodes[0],
-                                decoration: InputDecoration(
-                                  hintText: 'Enter first location',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  suffixIcon: _locationControllers[0]
-                                          .text
-                                          .isNotEmpty
-                                      ? IconButton(
-                                          icon: Icon(Icons.clear),
-                                          onPressed: () {
-                                            setState(() {
-                                              _locationControllers[0].clear();
-                                              _showSearchResults = false;
-                                              _searchResultsMap[0] = [];
-                                            });
-                                            if (_selectedLocations.isNotEmpty) {
-                                              _deleteLocation(0);
-                                            }
-                                          },
-                                        )
-                                      : null,
-                                ),
-                                onChanged: (value) {
-                                  if (value.trim().isEmpty) {
-                                    setState(() {
-                                      _searchResultsMap[0] = [];
-                                      _showSearchResults = false;
-                                      _activeSearchIndex = -1;
-                                    });
-                                  } else {
-                                    _searchPlaces(value, 0);
-                                  }
-                                },
-                                onTap: () {
-                                  setState(() {
-                                    _activeSearchIndex = 0;
-                                    _showSearchResults =
-                                        _locationControllers[0].text.isNotEmpty;
-                                  });
-                                },
+                      _buildMapSection(),
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Where do you want to go?',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                          ),
-                          if (_showSearchResults && _activeSearchIndex == 0)
-                            _buildSearchResults(0),
-                          ...List.generate(_selectedLocations.length, (index) {
-                            final actualIndex = index + 1;
-                            return Column(
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 8.0),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(8),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black12,
-                                          blurRadius: 4,
-                                          offset: Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: TextField(
-                                      controller:
-                                          _locationControllers[actualIndex],
-                                      focusNode:
-                                          _locationFocusNodes[actualIndex],
-                                      decoration: InputDecoration(
-                                        hintText: actualIndex ==
-                                                _selectedLocations.length
-                                            ? 'And then to?'
-                                            : 'Enter next location',
-                                        border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        suffixIcon: _locationControllers[
-                                                    actualIndex]
-                                                .text
-                                                .isNotEmpty
-                                            ? IconButton(
-                                                icon: Icon(Icons.clear),
-                                                onPressed: () {
-                                                  setState(() {
-                                                    _locationControllers[
-                                                            actualIndex]
-                                                        .clear();
-                                                    _showSearchResults = false;
-                                                    _searchResultsMap[
-                                                        actualIndex] = [];
-                                                  });
-                                                  _deleteLocation(actualIndex);
-                                                },
-                                              )
-                                            : null,
-                                      ),
-                                      onChanged: (value) {
-                                        if (value.trim().isEmpty) {
-                                          setState(() {
-                                            _searchResultsMap[actualIndex] = [];
-                                            _showSearchResults = false;
-                                            _activeSearchIndex = -1;
-                                          });
-                                        } else {
-                                          _searchPlaces(value, actualIndex);
-                                        }
-                                      },
-                                      onTap: () {
-                                        setState(() {
-                                          _activeSearchIndex = actualIndex;
-                                          _showSearchResults =
-                                              _locationControllers[actualIndex]
-                                                  .text
-                                                  .isNotEmpty;
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                ),
-                                if (_showSearchResults &&
-                                    _activeSearchIndex == actualIndex)
-                                  _buildSearchResults(actualIndex),
-                              ],
-                            );
-                          }),
-                        ],
+                            SizedBox(height: 8),
+                            _buildSearchBar(),
+                          ],
+                        ),
                       ),
                     ],
+                  ),
+                ),
+        ),
+        bottomNavigationBar: !_isMapExpanded
+            ? CustomBottomNav(
+                currentIndex: 3,
+                userEmail: widget.userEmail,
+              )
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Location Input Row with Wrapping
+          Wrap(
+            spacing: 8, // gap between adjacent chips
+            runSpacing: 8, // gap between lines
+            children: [
+              // Existing Locations
+              ..._selectedLocations.map((location) {
+                final index = _selectedLocations.indexOf(location);
+                return Container(
+                  height: 32,
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        location.name,
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      SizedBox(width: 4),
+                      InkWell(
+                        onTap: () => _deleteLocation(index),
+                        child: Icon(Icons.close, size: 16),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+              // Input Field
+              Container(
+                height: 32,
+                constraints: BoxConstraints(minWidth: 100),
+                child: TextField(
+                  controller: _locationControllers.last,
+                  focusNode: _locationFocusNodes.last,
+                  decoration: InputDecoration(
+                    hintText: _selectedLocations.isEmpty
+                        ? 'Enter countries, cities, or places to visit on your trip'
+                        : 'And then to?',
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  onChanged: (value) {
+                    if (value.trim().isEmpty) {
+                      setState(() {
+                        _searchResultsMap[_locationControllers.length - 1] = [];
+                        _showSearchResults = false;
+                      });
+                    } else {
+                      _searchPlaces(value, _locationControllers.length - 1);
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+
+          // Action Buttons
+          Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (_selectedLocations.isNotEmpty)
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _selectedLocations.clear();
+                        _locationControllers = [TextEditingController()];
+                        _locationFocusNodes = [FocusNode()];
+                        _setupLocationInput(0);
+                        _updateMapMarkers();
+                        _updateRoutes();
+                      });
+                    },
+                    child: Text(
+                      'Clear',
+                      style: TextStyle(color: Colors.black54),
+                    ),
+                  ),
+                SizedBox(width: 8),
+                TextButton(
+                  onPressed: () {
+                    if (_selectedLocations.length >= 2) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TransportationRoutePage(
+                            locations: _selectedLocations,
+                            userEmail: widget.userEmail,
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: Text(
+                    'Search',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  style: TextButton.styleFrom(
+                    backgroundColor: _selectedLocations.length >= 2
+                        ? Colors.blue
+                        : Colors.grey,
+                    minimumSize: Size(80, 36),
+                    padding: EdgeInsets.symmetric(horizontal: 16),
                   ),
                 ),
               ],
             ),
           ),
-        ),
-        bottomNavigationBar: CustomBottomNav(
-          currentIndex: 3,
-          userEmail: widget.userEmail,
-        ),
+
+          // Search Results
+          if (_showSearchResults &&
+              _searchResultsMap[_activeSearchIndex]?.isNotEmpty == true)
+            Container(
+              margin: EdgeInsets.only(top: 8),
+              constraints: BoxConstraints(maxHeight: 200),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _searchResultsMap[_activeSearchIndex]?.length ?? 0,
+                itemBuilder: (context, index) {
+                  final place = _searchResultsMap[_activeSearchIndex]![index];
+                  return ListTile(
+                    dense: true,
+                    title: Text(place['description']),
+                    onTap: () {
+                      _locationControllers[_activeSearchIndex].text =
+                          place['description'];
+                      _selectPlace(place['place_id'], _activeSearchIndex);
+                    },
+                  );
+                },
+              ),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildSearchResults(int fieldIndex) {
-    final results = _searchResultsMap[fieldIndex] ?? [];
-    if (results.isEmpty || _activeSearchIndex != fieldIndex) {
-      return Container();
-    }
-
-    return Container(
-      margin: EdgeInsets.only(bottom: 8),
-      padding: EdgeInsets.symmetric(vertical: 8),
-      constraints: BoxConstraints(
-        maxHeight: 200,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ListView.builder(
-        shrinkWrap: true,
-        physics: ClampingScrollPhysics(),
-        itemCount: results.length,
-        itemBuilder: (context, index) {
-          final place = results[index];
-          return ListTile(
-            title: Text(place['description']),
-            onTap: () {
-              _locationControllers[fieldIndex].text = place['description'];
-              _selectPlace(place['place_id'], fieldIndex);
-            },
+  Widget _buildMapSection() {
+    return FutureBuilder<CameraPosition>(
+      future: _mapCache.getInitialPosition(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return Container(
+            height: 200,
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(child: CircularProgressIndicator()),
           );
-        },
-      ),
+        }
+
+        return Stack(
+          children: [
+            Container(
+              height: 200,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: GoogleMap(
+                  initialCameraPosition: snapshot.data!,
+                  onMapCreated: (controller) {
+                    _mapController = controller;
+                    _updateMapMarkers();
+                  },
+                  markers: _markers,
+                  polylines: _routes,
+                  mapType: MapType.normal,
+                  myLocationEnabled: true,
+                  myLocationButtonEnabled: false,
+                  zoomControlsEnabled: false,
+                  zoomGesturesEnabled: true,
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: FloatingActionButton(
+                mini: true,
+                backgroundColor: Colors.white,
+                child: Icon(Icons.fullscreen, color: Colors.black87),
+                onPressed: () {
+                  setState(() {
+                    _isMapExpanded = true;
+                  });
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildExpandedMap() {
+    return Stack(
+      children: [
+        GoogleMap(
+          initialCameraPosition: CameraPosition(
+            target: LatLng(4.2105, 101.9758),
+            zoom: 6,
+          ),
+          onMapCreated: (controller) {
+            _mapController = controller;
+            _updateMapMarkers();
+          },
+          markers: _markers,
+          polylines: _routes,
+          mapType: MapType.normal,
+          myLocationEnabled: true,
+          myLocationButtonEnabled: true,
+          zoomControlsEnabled: true,
+          zoomGesturesEnabled: true,
+        ),
+        Positioned(
+          top: 16,
+          left: 16,
+          child: FloatingActionButton(
+            mini: true,
+            backgroundColor: Colors.white,
+            child: Icon(Icons.close, color: Colors.black87),
+            onPressed: () {
+              setState(() {
+                _isMapExpanded = false;
+              });
+            },
+          ),
+        ),
+      ],
     );
   }
 
   void _updateMapMarkers() {
-    _markers.clear();
-    for (var i = 0; i < _selectedLocations.length; i++) {
-      final location = _selectedLocations[i];
-      _markers.add(
-        Marker(
-          markerId: MarkerId(location.placeId),
-          position: location.latLng,
-          infoWindow: InfoWindow(title: location.name),
-        ),
-      );
+    if (_mapController == null) return;
+
+    setState(() {
+      _markers.clear();
+
+      for (var i = 0; i < _selectedLocations.length; i++) {
+        final location = _selectedLocations[i];
+        _markers.add(
+          Marker(
+            markerId: MarkerId(location.placeId),
+            position: location.latLng,
+            infoWindow: InfoWindow(
+              title: location.name,
+              snippet: 'Stop ${i + 1}',
+            ),
+          ),
+        );
+      }
+
+      // Adjust map view if there are markers
+      if (_markers.isNotEmpty) {
+        _fitMapBounds();
+
+        // Cache the current map state
+        _mapController!.getVisibleRegion().then((bounds) {
+          final position = CameraPosition(
+            target: LatLng(
+              (bounds.northeast.latitude + bounds.southwest.latitude) / 2,
+              (bounds.northeast.longitude + bounds.southwest.longitude) / 2,
+            ),
+            zoom: 15,
+          );
+          _mapCache.cacheMapState(position, _markers);
+        });
+      }
+    });
+  }
+
+  void _fitMapBounds() {
+    if (_markers.isEmpty || _mapController == null) return;
+
+    // Calculate bounds with padding
+    double minLat = double.infinity;
+    double maxLat = -double.infinity;
+    double minLng = double.infinity;
+    double maxLng = -double.infinity;
+
+    // Find the bounding box for all markers
+    for (Marker marker in _markers) {
+      final lat = marker.position.latitude;
+      final lng = marker.position.longitude;
+      minLat = min(minLat, lat);
+      maxLat = max(maxLat, lat);
+      minLng = min(minLng, lng);
+      maxLng = max(maxLng, lng);
     }
+
+    // Add padding to the bounds (about 15% on each side)
+    final latPadding = (maxLat - minLat) * 0.15;
+    final lngPadding = (maxLng - minLng) * 0.15;
+
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(
+            minLat - latPadding,
+            minLng - lngPadding,
+          ),
+          northeast: LatLng(
+            maxLat + latPadding,
+            maxLng + lngPadding,
+          ),
+        ),
+        50, // padding in pixels
+      ),
+    );
   }
 
   void _updateRoutes() {
