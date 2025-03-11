@@ -57,7 +57,7 @@ class _ExplorePageState extends State<ExplorePage> {
   }
 
   Future<void> _loadPopularPlaces() async {
-    final String apiKey = 'AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts';
+    final String apiKey = 'AIzaSyD5fitoSIC-JDcKSTEOvnT0Yt-WF9NxvqQ';
     final List<Map<String, String>> places = [
       {'name': 'Mount Fuji', 'country': 'Japan'},
       {'name': 'Bali Beach', 'country': 'Indonesia'},

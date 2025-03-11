@@ -20,7 +20,7 @@ class TourDetailsPage extends StatefulWidget {
 class _TourDetailsPageState extends State<TourDetailsPage> {
   int _currentImageIndex = 0;
   bool _isInWishlist = false;
-  final _placesApiKey = 'AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts';
+  final _placesApiKey = 'AIzaSyD5fitoSIC-JDcKSTEOvnT0Yt-WF9NxvqQ';
   late final GoogleMapsPlaces _places;
   PlaceDetails? _placeDetails;
   final _firestore = FirebaseFirestore.instance;

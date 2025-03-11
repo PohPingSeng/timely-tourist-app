@@ -29,7 +29,7 @@ class _TripPlanPageState extends State<TripPlanPage> {
   List<TripLocation> _selectedLocations = [];
   Set<Polyline> _routes = {};
   Set<Marker> _markers = {};
-  final String _placesApiKey = 'AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts';
+  final String _placesApiKey = 'AIzaSyD5fitoSIC-JDcKSTEOvnT0Yt-WF9NxvqQ';
   bool _showSearchResults = false;
   List<TextEditingController> _locationControllers = [TextEditingController()];
   List<FocusNode> _locationFocusNodes = [FocusNode()];

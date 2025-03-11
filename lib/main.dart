@@ -86,7 +86,28 @@ class TouristLoginPageState extends State<TouristLoginPage> {
         return;
       }
 
-      // Navigate immediately to splash screen
+      // First verify user exists
+      final userQuery = await FirebaseFirestore.instance
+          .collection('ttsUser')
+          .doc('UID')
+          .collection('UID')
+          .where('email', isEqualTo: email)
+          .where('password', isEqualTo: password)
+          .limit(1)  // Add limit for efficiency
+          .get();
+
+      if (userQuery.docs.isEmpty) {
+        setState(() {
+          errorMessage = 'Invalid email or password';
+        });
+        return;
+      }
+
+      // Get user data for later use
+      final userData = userQuery.docs.first.data();
+      print('User logged in: ${userData['name']}');
+
+      // Only navigate if user exists and password matches
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
@@ -98,20 +119,11 @@ class TouristLoginPageState extends State<TouristLoginPage> {
           transitionDuration: Duration(milliseconds: 200),
         ),
       );
-
-      // Authenticate in background
-      final userQuery = await FirebaseFirestore.instance
-          .collection('ttsUser')
-          .doc('UID')
-          .collection('UID')
-          .where('email', isEqualTo: email)
-          .get();
-
-      if (userQuery.docs.isEmpty) {
-        print('User not found');
-      }
     } catch (e) {
       print('Error during login: $e');
+      setState(() {
+        errorMessage = 'Login failed. Please try again.';
+      });
     }
   }
 

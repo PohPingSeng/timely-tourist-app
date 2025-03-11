@@ -243,6 +243,9 @@ class _RecommendationPageState extends State<RecommendationPage> {
                 image: NetworkImage(
                     place['image'] ?? 'https://via.placeholder.com/400'),
                 fit: BoxFit.cover,
+                onError: (_, __) {
+                  print('Error loading image for ${place['name']}');
+                },
               ),
             ),
           ),

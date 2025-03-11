@@ -18,7 +18,7 @@
 
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts"/>
+            android:value="AIzaSyD5fitoSIC-JDcKSTEOvnT0Yt-WF9NxvqQ"/>
 
         <meta-data
             android:name="com.google.android.geo.renderer.preferredRenderer"
@@ -54,4 +54,3 @@
         </intent>
     </queries>
 </manifest>
-
