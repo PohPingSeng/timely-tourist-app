@@ -28,7 +28,7 @@ class _MapPageState extends State<MapPage> {
   Set<Polygon> _polygons = {};
 
   // Add your places API key here
-  final String _placesApiKey = 'AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts';
+  final String _placesApiKey = 'AIzaSyD5fitoSIC-JDcKSTEOvnT0Yt-WF9NxvqQ';
 
   // Search controller
   final TextEditingController _searchController = TextEditingController();

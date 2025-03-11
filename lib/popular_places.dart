@@ -14,7 +14,7 @@ class PopularPlacesPage extends StatefulWidget {
 }
 
 class _PopularPlacesPageState extends State<PopularPlacesPage> {
-  final String apiKey = 'AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts';
+  final String apiKey = 'AIzaSyD5fitoSIC-JDcKSTEOvnT0Yt-WF9NxvqQ';
   List<Map<String, dynamic>> places = [];
   bool isLoading = true;
 

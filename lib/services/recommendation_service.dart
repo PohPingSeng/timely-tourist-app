@@ -7,7 +7,7 @@ import 'dart:async';
 class RecommendationService {
   final FirestoreService _firestoreService = FirestoreService();
   final places.GoogleMapsPlaces placesApi = places.GoogleMapsPlaces(
-      apiKey: 'AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts');
+      apiKey: 'AIzaSyD5fitoSIC-JDcKSTEOvnT0Yt-WF9NxvqQ');
   late IO.Socket socket;
 
   RecommendationService() {
@@ -139,7 +139,7 @@ class RecommendationService {
               'user_ratings_total':
                   details.result.toJson()['user_ratings_total'],
               'image': place.photos?.isNotEmpty == true
-                  ? 'https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos!.first.photoReference}&key=AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts'
+                  ? 'https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos!.first.photoReference}&key=AIzaSyD5fitoSIC-JDcKSTEOvnT0Yt-WF9NxvqQ'
                   : null,
             };
             print('Debug: Enriched data: $enrichedRec');
@@ -163,7 +163,7 @@ class RecommendationService {
             'location': place.formattedAddress,
             'place_id': place.placeId,
             'image': place.photos.isNotEmpty
-                ? 'https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos.first.photoReference}&key=AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts'
+                ? 'https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos.first.photoReference}&key=AIzaSyD5fitoSIC-JDcKSTEOvnT0Yt-WF9NxvqQ'
                 : null,
             'rating': place.rating,
             'reviews':

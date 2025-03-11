@@ -3,11 +3,11 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     return const FirebaseOptions(
-      apiKey: 'AIzaSyBiZiSSK_BCVqDA91Jtezygb5l1pz6JCm4',
-      appId: '1:54586227246:android:436bd250b19e287e1ffdbf',
-      messagingSenderId: '54586227246',
-      projectId: 'timely-tourist',
-      storageBucket: 'timely-tourist.firebasestorage.app',
+      apiKey: 'AIzaSyAlZ6kifOgZtKtA_dJyEaE5g_IIeiOdYRU',
+      appId: '1:328856701659:android:f301c09e209fb4ffde5afe',
+      messagingSenderId: '328856701659',
+      projectId: 'timely-tourist-c4a91',
+      storageBucket: 'timely-tourist-c4a91.firebasestorage.app',
     );
   }
 }

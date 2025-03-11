@@ -41,7 +41,7 @@ android {
         versionName = "1.0"
         multiDexEnabled true
         manifestPlaceholders += [
-            'com.google.android.geo.API_KEY': 'AIzaSyAzPTuVu8DrzsaDi_fNpdGMwdNFByeq2ts'
+            'com.google.android.geo.API_KEY': String.valueOf(System.getenv("GOOGLE_MAPS_API_KEY") ?: 'AIzaSyA3_PMWEXlTBN-DAm8jk2UjYmGtj2JSbb0')
         ]
     }
 
@@ -69,4 +69,3 @@ dependencies {
     implementation 'com.google.android.gms:play-services-location:21.0.1'
     implementation 'androidx.multidex:multidex:2.0.1'
 } 
-
