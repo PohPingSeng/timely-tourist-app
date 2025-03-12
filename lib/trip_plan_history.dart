@@ -268,26 +268,34 @@ class _TripPlanHistoryPageState extends State<TripPlanHistoryPage> {
   void _confirmDelete(BuildContext context, String tripId) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (BuildContext dialogContext) => AlertDialog(
         title: Text('Delete Trip'),
         content: Text('Are you sure you want to delete this trip?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: Text('Cancel'),
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
+
               try {
+                print('Attempting to delete trip: $tripId'); // Debug print
                 await _firestore.collection('trips').doc(tripId).delete();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Trip deleted successfully')),
-                );
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Trip deleted successfully')),
+                  );
+                }
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed to delete trip: $e')),
-                );
+                print('Delete error: $e'); // Debug print
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to delete trip: $e')),
+                  );
+                }
               }
             },
             child: Text(

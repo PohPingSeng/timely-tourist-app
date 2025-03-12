@@ -58,4 +58,8 @@ class SessionManager {
   Future<void> setSessionTripId(String tripId) async {
     _sessionTripId = tripId;
   }
+
+  Future<String?> getSessionTripId() async {
+    return _sessionTripId;
+  }
 }
