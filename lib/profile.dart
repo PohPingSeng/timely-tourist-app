@@ -6,6 +6,8 @@ import 'widgets/custom_bottom_nav.dart';
 import 'main.dart';
 import 'wishlist_page.dart';
 import 'utils/page_transitions.dart';
+import 'trip_plan_history.dart';
+import 'services/session_manager.dart';
 
 class ProfilePage extends StatefulWidget {
   final String userEmail;
@@ -19,6 +21,7 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final SessionManager _sessionManager = SessionManager();
   Map<String, dynamic>? userData;
   StreamSubscription<QuerySnapshot>? _userDataSubscription;
 
@@ -66,7 +69,23 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _signOut() async {
     try {
+      // Clear the current trip session before logout
+      await _sessionManager.clearSession();
+
+      // Clear any stored trip data
+      final querySnapshot = await _firestore
+          .collection('trips')
+          .where('userEmail', isEqualTo: widget.userEmail)
+          .where('isCurrentTrip', isEqualTo: true)
+          .get();
+
+      for (var doc in querySnapshot.docs) {
+        await doc.reference.update({'isCurrentTrip': false});
+      }
+
+      // Sign out from Firebase Auth
       await _auth.signOut();
+
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
@@ -76,6 +95,9 @@ class _ProfilePageState extends State<ProfilePage> {
       }
     } catch (e) {
       print('Error signing out: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error signing out: $e')),
+      );
     }
   }
 
@@ -138,7 +160,14 @@ class _ProfilePageState extends State<ProfilePage> {
                       title: Text('My Trips'),
                       trailing: Icon(Icons.chevron_right),
                       onTap: () {
-                        // Navigate to trips
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TripPlanHistoryPage(
+                              userEmail: widget.userEmail,
+                            ),
+                          ),
+                        );
                       },
                     ),
 

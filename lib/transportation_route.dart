@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math';
 import 'models/trip_location.dart';
-import 'dart:ui' as ui;
 import 'dart:ui';
 import 'dart:typed_data';
 

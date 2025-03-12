@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow access to ttsUser collection and all subcollections
+    match /ttsUser/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to places collection
+    match /places/{document} {
+      allow read, write: if true;
+    }
+
+    // Trips collection - allow access based on userEmail
+    match /trips/{tripId} {
+      allow read: if true;  // Allow reading all trips for now
+      allow create: if request.resource.data.userEmail != null;
+      allow update: if request.auth != null && resource.data.userEmail == request.auth.token.email;
+      allow delete: if true;  // Allow deleting for now since we're having auth issues
+    }
+  }
+} 
