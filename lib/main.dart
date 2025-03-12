@@ -5,6 +5,7 @@ import 'signUp.dart';
 import 'firebase_options.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'splash_screen.dart';
+import 'services/session_manager.dart';
 
 void main() async {
   try {
@@ -93,7 +94,7 @@ class TouristLoginPageState extends State<TouristLoginPage> {
           .collection('UID')
           .where('email', isEqualTo: email)
           .where('password', isEqualTo: password)
-          .limit(1)  // Add limit for efficiency
+          .limit(1)
           .get();
 
       if (userQuery.docs.isEmpty) {
@@ -102,6 +103,9 @@ class TouristLoginPageState extends State<TouristLoginPage> {
         });
         return;
       }
+
+      // Initialize session and get trip ID
+      final sessionTripId = await SessionManager().initializeSession(email);
 
       // Get user data for later use
       final userData = userQuery.docs.first.data();
@@ -112,7 +116,7 @@ class TouristLoginPageState extends State<TouristLoginPage> {
         context,
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) =>
-              SplashScreen(userEmail: email),
+              SplashScreen(userEmail: email, sessionTripId: sessionTripId),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },

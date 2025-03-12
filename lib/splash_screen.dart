@@ -6,8 +6,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SplashScreen extends StatelessWidget {
   final String userEmail;
+  final String sessionTripId;
 
-  const SplashScreen({Key? key, required this.userEmail}) : super(key: key);
+  const SplashScreen({
+    Key? key,
+    required this.userEmail,
+    required this.sessionTripId,
+  }) : super(key: key);
 
   void _handleGetStarted(BuildContext context) {
     Navigator.pushReplacement(

@@ -8,15 +8,22 @@ import 'dart:convert';
 import 'services/trip_state_manager.dart';
 import 'services/map_cache_service.dart';
 import 'transportation_route.dart';
+import 'services/trip_plan_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'services/session_manager.dart';
 
 class TripPlanPage extends StatefulWidget {
   final String userEmail;
   final Map<String, dynamic>? initialPlace;
+  final List<TripLocation>? savedLocations;
+  final String? tripId;
 
   const TripPlanPage({
     Key? key,
     required this.userEmail,
     this.initialPlace,
+    this.savedLocations,
+    this.tripId,
   }) : super(key: key);
 
   @override
@@ -38,14 +45,27 @@ class _TripPlanPageState extends State<TripPlanPage> {
   final TripStateManager _tripStateManager = TripStateManager();
   bool _isMapExpanded = false;
   final MapCacheService _mapCache = MapCacheService();
+  final TripPlanService _tripService = TripPlanService();
+  String? _currentTripId;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final SessionManager _sessionManager = SessionManager();
 
   @override
   void initState() {
     super.initState();
-    _restoreLocations();
+    _currentTripId = widget.tripId;
+
+    if (widget.tripId != null && widget.savedLocations != null) {
+      // Restore saved locations
+      _selectedLocations = widget.savedLocations!;
+      _updateLocationControllers();
+
+      // Update current trip status
+      _updateTripStatus();
+    }
+
     _initializeMap();
 
-    // Then add new location if provided
     if (widget.initialPlace != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _addInitialPlace();
@@ -135,64 +155,87 @@ class _TripPlanPageState extends State<TripPlanPage> {
           _showSearchResults = false;
           _activeSearchIndex = -1;
 
-          // Add or update location
           if (index >= _selectedLocations.length) {
             _selectedLocations.add(newLocation);
-            _tripStateManager.addLocation(newLocation);
-
-            // Add a new empty field for the next location
-            _locationControllers.add(TextEditingController());
-            _locationFocusNodes.add(FocusNode());
-            _setupLocationInput(_locationControllers.length - 1);
           } else {
             _selectedLocations[index] = newLocation;
-            _tripStateManager.locations[index] = newLocation;
           }
+
+          // Clear the input field after adding the location
+          _locationControllers[index].clear();
 
           _updateMapMarkers();
           _updateRoutes();
         });
+
+        // Save to Firestore in real-time
+        try {
+          final tripId = _currentTripId ?? _sessionManager.sessionTripId;
+          if (tripId != null) {
+            await _firestore.collection('trips').doc(tripId).update({
+              'locations':
+                  _selectedLocations.map((loc) => loc.toMap()).toList(),
+              'lastUpdated': FieldValue.serverTimestamp(),
+            });
+          }
+        } catch (e) {
+          print('Error saving location: $e');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to save location: $e')),
+          );
+        }
       }
     } catch (e) {
       print('Error getting place details: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error getting place details: $e')),
+      );
     }
   }
 
-  void _deleteLocation(int index) {
+  Future<void> _saveLocation(TripLocation location) async {
     setState(() {
-      // Remove the location
+      _selectedLocations.add(location);
+      _updateLocationControllers();
+    });
+
+    try {
+      final tripId = _currentTripId ?? _sessionManager.sessionTripId;
+      if (tripId != null) {
+        await _firestore.collection('trips').doc(tripId).update({
+          'locations': _selectedLocations.map((loc) => loc.toMap()).toList(),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save location: $e')),
+      );
+    }
+  }
+
+  void _deleteLocation(int index) async {
+    setState(() {
       _selectedLocations.removeAt(index);
-      _tripStateManager.removeLocation(index);
-
-      // Remove the corresponding controller and focus node
-      _locationControllers[index].dispose();
-      _locationControllers.removeAt(index);
-      _locationFocusNodes[index].dispose();
-      _locationFocusNodes.removeAt(index);
-
-      // Update the text in the remaining controllers
-      for (int i = index; i < _selectedLocations.length; i++) {
-        _locationControllers[i].text = _selectedLocations[i].name;
-      }
-
-      // Ensure there's always at least one empty input field
-      if (_locationControllers.isEmpty) {
-        _locationControllers.add(TextEditingController());
-        _locationFocusNodes.add(FocusNode());
-        _setupLocationInput(0);
-      }
-
-      // Clear the last controller if it's not empty
-      if (_locationControllers.last.text.isNotEmpty) {
-        _locationControllers.add(TextEditingController());
-        _locationFocusNodes.add(FocusNode());
-        _setupLocationInput(_locationControllers.length - 1);
-      }
-
-      // Update map and routes
+      _updateLocationControllers();
       _updateMapMarkers();
       _updateRoutes();
     });
+
+    // Delete from Firestore in real-time
+    try {
+      final tripId = _currentTripId ?? _sessionManager.sessionTripId;
+      if (tripId != null) {
+        await _firestore.collection('trips').doc(tripId).update({
+          'locations': _selectedLocations.map((loc) => loc.toMap()).toList(),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update trip: $e')),
+      );
+    }
   }
 
   void _handleTapOutside() {
@@ -379,8 +422,7 @@ class _TripPlanPageState extends State<TripPlanPage> {
                             userEmail: widget.userEmail,
                             onLocationRemoved: (location) {
                               final index = _selectedLocations.indexWhere(
-                                (loc) => loc.placeId == location.placeId
-                              );
+                                  (loc) => loc.placeId == location.placeId);
                               if (index != -1) {
                                 _deleteLocation(index);
                               }
@@ -659,6 +701,139 @@ class _TripPlanPageState extends State<TripPlanPage> {
       // Set the text and select the place
       _locationControllers[index].text = place['name'] ?? '';
       await _selectPlace(placeId, index);
+    }
+  }
+
+  void _updateLocationControllers() {
+    _locationControllers = List.generate(
+      _selectedLocations.length + 1,
+      (index) {
+        var controller = TextEditingController();
+        if (index < _selectedLocations.length) {
+          controller.text = _selectedLocations[index].name;
+        }
+        return controller;
+      },
+    );
+  }
+
+  Future<void> _addLocation(TripLocation location) async {
+    setState(() {
+      _selectedLocations.add(location);
+      _updateLocationControllers();
+      _updateMapMarkers();
+      _updateRoutes();
+    });
+
+    try {
+      final tripId = _currentTripId ?? _sessionManager.sessionTripId;
+      if (tripId != null) {
+        await _tripService.updateLocations(_selectedLocations);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save location: $e')),
+      );
+    }
+  }
+
+  Future<void> _saveLocations() async {
+    if (_selectedLocations.isNotEmpty) {
+      try {
+        final tripId = _currentTripId ?? _sessionManager.sessionTripId;
+        if (tripId != null) {
+          await _tripService.updateLocations(_selectedLocations);
+        }
+      } catch (e) {
+        print('Error saving locations: $e');
+      }
+    }
+  }
+
+  // Call _saveLocations whenever locations change
+  void _handleLocationChange() {
+    setState(() {
+      _updateMapMarkers();
+      _updateRoutes();
+    });
+    _saveLocations();
+  }
+
+  Future<void> _loadSavedLocations() async {
+    try {
+      final tripId = _currentTripId ?? _sessionManager.sessionTripId;
+      if (tripId != null) {
+        final tripDoc = await _firestore.collection('trips').doc(tripId).get();
+
+        if (tripDoc.exists) {
+          final data = tripDoc.data() as Map<String, dynamic>;
+          final locations =
+              List<Map<String, dynamic>>.from(data['locations'] ?? []);
+
+          setState(() {
+            _selectedLocations =
+                locations.map((loc) => TripLocation.fromMap(loc)).toList();
+            _updateLocationControllers();
+            _updateMapMarkers();
+            _updateRoutes();
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading saved locations: $e');
+    }
+  }
+
+  void _clearLocations() async {
+    try {
+      final tripId = _currentTripId ?? _sessionManager.sessionTripId;
+      if (tripId != null) {
+        // Clear locations in Firestore
+        await _firestore.collection('trips').doc(tripId).update({
+          'locations': [],
+          'lastUpdated': FieldValue.serverTimestamp(),
+        });
+
+        // Clear UI state
+        setState(() {
+          _selectedLocations.clear();
+          _locationControllers = [TextEditingController()];
+          _locationFocusNodes = [FocusNode()];
+          _setupLocationInput(0);
+          _updateMapMarkers();
+          _updateRoutes();
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to clear locations: $e')),
+      );
+    }
+  }
+
+  Future<void> _updateTripStatus() async {
+    try {
+      // Mark all other trips as not current
+      await _firestore
+          .collection('trips')
+          .where('userEmail', isEqualTo: widget.userEmail)
+          .where('isCurrentTrip', isEqualTo: true)
+          .get()
+          .then((querySnapshot) {
+        for (var doc in querySnapshot.docs) {
+          doc.reference.update({'isCurrentTrip': false});
+        }
+      });
+
+      // Mark this trip as current
+      if (_currentTripId != null) {
+        await _firestore
+            .collection('trips')
+            .doc(_currentTripId)
+            .update({'isCurrentTrip': true});
+      }
+    } catch (e) {
+      print('Error updating trip status: $e');
     }
   }
 }
