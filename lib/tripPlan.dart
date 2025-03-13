@@ -11,6 +11,7 @@ import 'transportation_route.dart';
 import 'services/trip_plan_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/session_manager.dart';
+import 'multi_transportation_route.dart';
 
 class TripPlanPage extends StatefulWidget {
   final String userEmail;
@@ -200,9 +201,12 @@ class _TripPlanPageState extends State<TripPlanPage> {
   }
 
   void _setupLocationInput(int index) {
+    if (index >= _locationFocusNodes.length) return;
+
     _locationFocusNodes[index].addListener(() {
       if (_locationFocusNodes[index].hasFocus) {
         setState(() {
+          _activeSearchIndex = index;
           _showSearchResults = true;
         });
       }
@@ -296,57 +300,103 @@ class _TripPlanPageState extends State<TripPlanPage> {
     }
   }
 
-  void _deleteLocation(int index) {
+  void _deleteLocation(int index) async {
     if (_selectedLocations.isEmpty ||
         index < 0 ||
         index >= _selectedLocations.length) {
       return;
     }
 
-    setState(() {
-      // Remove the location
-      _selectedLocations.removeAt(index);
-      _tripStateManager.removeLocation(index);
+    try {
+      // Get current trip ID
+      String? tripId =
+          _currentTripId ?? await _sessionManager.getSessionTripId();
+      if (tripId == null) return;
 
-      // Clean up controllers and focus nodes
-      if (_locationControllers.length > index) {
-        _locationControllers[index].dispose();
-        _locationControllers.removeAt(index);
-        _locationFocusNodes[index].dispose();
-        _locationFocusNodes.removeAt(index);
-      }
+      // Remove the location from local state
+      setState(() {
+        _selectedLocations.removeAt(index);
+        _tripStateManager.removeLocation(index);
 
-      // Update the text in the remaining controllers
-      for (int i = index;
-          i < _selectedLocations.length && i < _locationControllers.length;
-          i++) {
-        _locationControllers[i].text = _selectedLocations[i].name;
-      }
+        // Clean up controllers and focus nodes
+        if (_locationControllers.length > index) {
+          _locationControllers[index].dispose();
+          _locationControllers.removeAt(index);
+          _locationFocusNodes[index].dispose();
+          _locationFocusNodes.removeAt(index);
+        }
 
-      // Ensure there's always at least one empty input field
-      if (_locationControllers.isEmpty) {
-        _locationControllers.add(TextEditingController());
-        _locationFocusNodes.add(FocusNode());
-        _setupLocationInput(0);
-      }
+        // Update the text in the remaining controllers
+        for (int i = index;
+            i < _selectedLocations.length && i < _locationControllers.length;
+            i++) {
+          _locationControllers[i].text = _selectedLocations[i].name;
+        }
 
-      // Update map and routes
-      _updateMapMarkers();
-      _updateRoutes();
-    });
+        // Ensure there's always at least one empty input field
+        if (_locationControllers.isEmpty) {
+          _locationControllers.add(TextEditingController());
+          _locationFocusNodes.add(FocusNode());
+          _setupLocationInput(0);
+        }
 
-    // Save the updated locations to Firestore
-    _saveLocations();
+        // Update map and routes
+        _updateMapMarkers();
+        _updateRoutes();
+      });
+
+      // Update Firestore with the new locations list
+      await _firestore.collection('trips').doc(tripId).update({
+        'locations': _selectedLocations.map((loc) => loc.toMap()).toList(),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error updating database after location removal: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text('Failed to update database after removing location')),
+      );
+    }
   }
 
   Future<void> _saveLocations() async {
     try {
       final tripId = widget.tripId ?? await _sessionManager.getSessionTripId();
       if (tripId != null) {
-        await _firestore.collection('trips').doc(tripId).update({
-          'locations': _selectedLocations.map((loc) => loc.toMap()).toList(),
-          'lastUpdated': FieldValue.serverTimestamp(),
-        });
+        // Get current locations from Firestore
+        final tripDoc = await _firestore.collection('trips').doc(tripId).get();
+
+        if (tripDoc.exists) {
+          final data = tripDoc.data() as Map<String, dynamic>;
+          final existingLocations =
+              List<Map<String, dynamic>>.from(data['locations'] ?? []);
+
+          // Create a set of existing place IDs to avoid duplicates
+          final existingPlaceIds = Set<String>.from(
+              existingLocations.map((loc) => loc['placeId'] as String));
+
+          // Add only new locations that don't already exist
+          for (var location in _selectedLocations) {
+            if (!existingPlaceIds.contains(location.placeId)) {
+              existingLocations.add(location.toMap());
+              existingPlaceIds.add(location.placeId);
+            }
+          }
+
+          // Update Firestore with merged locations
+          await _firestore.collection('trips').doc(tripId).update({
+            'locations': existingLocations,
+            'lastUpdated': FieldValue.serverTimestamp(),
+          });
+        } else {
+          // If no document exists, create new one with current locations
+          await _firestore.collection('trips').doc(tripId).set({
+            'locations': _selectedLocations.map((loc) => loc.toMap()).toList(),
+            'lastUpdated': FieldValue.serverTimestamp(),
+            'userEmail': widget.userEmail,
+            'isCurrentTrip': true,
+          });
+        }
       }
     } catch (e) {
       print('Error saving locations: $e');
@@ -513,16 +563,7 @@ class _TripPlanPageState extends State<TripPlanPage> {
               children: [
                 if (_selectedLocations.isNotEmpty)
                   TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _selectedLocations.clear();
-                        _locationControllers = [TextEditingController()];
-                        _locationFocusNodes = [FocusNode()];
-                        _setupLocationInput(0);
-                        _updateMapMarkers();
-                        _updateRoutes();
-                      });
-                    },
+                    onPressed: () => _clearLocations(),
                     child: Text(
                       'Clear',
                       style: TextStyle(color: Colors.black54),
@@ -535,17 +576,33 @@ class _TripPlanPageState extends State<TripPlanPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => TransportationRoutePage(
-                            locations: _selectedLocations,
-                            userEmail: widget.userEmail,
-                            onLocationRemoved: (location) {
-                              final index = _selectedLocations.indexWhere(
-                                  (loc) => loc.placeId == location.placeId);
-                              if (index != -1) {
-                                _deleteLocation(index);
-                              }
-                            },
-                          ),
+                          builder: (context) => _selectedLocations.length > 2
+                              ? MultiTransportationRoutePage(
+                                  locations: _selectedLocations,
+                                  userEmail: widget.userEmail,
+                                  onLocationRemoved: (location) {
+                                    final index = _selectedLocations.indexWhere(
+                                        (loc) =>
+                                            loc.placeId == location.placeId);
+                                    if (index != -1) {
+                                      _deleteLocation(index);
+                                    }
+                                  },
+                                  onLocationsUpdated: _syncLocations,
+                                )
+                              : TransportationRoutePage(
+                                  locations: _selectedLocations,
+                                  userEmail: widget.userEmail,
+                                  onLocationRemoved: (location) {
+                                    final index = _selectedLocations.indexWhere(
+                                        (loc) =>
+                                            loc.placeId == location.placeId);
+                                    if (index != -1) {
+                                      _deleteLocation(index);
+                                    }
+                                  },
+                                  onLocationsUpdated: _syncLocations,
+                                ),
                         ),
                       );
                     }
@@ -803,28 +860,112 @@ class _TripPlanPageState extends State<TripPlanPage> {
   }
 
   Future<void> _addInitialPlace() async {
+    if (widget.initialPlace == null) return;
+
     final place = widget.initialPlace!;
     final placeId = place['place_id'];
-    if (placeId != null) {
-      // Get the next available index
-      final index = _selectedLocations.length;
+    if (placeId == null) return;
 
-      // Ensure we have enough controllers and focus nodes
-      while (_locationControllers.length <= index) {
-        _locationControllers.add(TextEditingController());
-        _locationFocusNodes.add(FocusNode());
-        _setupLocationInput(_locationControllers.length - 1);
+    try {
+      // Get current trip ID from Firestore
+      final querySnapshot = await _firestore
+          .collection('trips')
+          .where('userEmail', isEqualTo: widget.userEmail)
+          .where('isCurrentTrip', isEqualTo: true)
+          .get();
+
+      String? tripId;
+
+      if (querySnapshot.docs.isNotEmpty) {
+        // Use existing current trip
+        tripId = querySnapshot.docs.first.id;
+        _currentTripId = tripId;
+      } else {
+        // Create new trip only if no current trip exists
+        final newTripRef = await _firestore.collection('trips').add({
+          'userEmail': widget.userEmail,
+          'isCurrentTrip': true,
+          'createdAt': FieldValue.serverTimestamp(),
+          'locations': [],
+        });
+        tripId = newTripRef.id;
+        _currentTripId = tripId;
       }
 
-      // Set the text and select the place
-      _locationControllers[index].text = place['name'] ?? '';
-      await _selectPlace(placeId, index);
+      await _sessionManager.setSessionTripId(tripId);
+
+      // Get place details
+      final response = await http.get(
+        Uri.parse('https://maps.googleapis.com/maps/api/place/details/json'
+            '?place_id=$placeId'
+            '&fields=name,geometry,formatted_address'
+            '&key=$_placesApiKey'),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['result'] == null) {
+          throw Exception('No place details found');
+        }
+
+        final result = data['result'];
+        final newLocation = TripLocation(
+          placeId: placeId,
+          name: result['name'] ?? 'Unknown Place',
+          address: result['formatted_address'] ?? '',
+          latLng: LatLng(
+            result['geometry']?['location']?['lat'] ?? 0.0,
+            result['geometry']?['location']?['lng'] ?? 0.0,
+          ),
+        );
+
+        // Check if location already exists
+        if (!_selectedLocations.any((loc) => loc.placeId == placeId)) {
+          // Get current locations from Firestore
+          final tripDoc =
+              await _firestore.collection('trips').doc(tripId).get();
+          final existingLocations = tripDoc.exists
+              ? List<Map<String, dynamic>>.from(
+                  tripDoc.data()?['locations'] ?? [])
+              : [];
+
+          // Add new location to existing locations
+          existingLocations.add(newLocation.toMap());
+
+          setState(() {
+            _selectedLocations = existingLocations
+                .map((loc) => TripLocation.fromMap(loc))
+                .toList();
+            _tripStateManager.locations = List.from(_selectedLocations);
+            _updateLocationControllers();
+            _updateMapMarkers();
+            _updateRoutes();
+          });
+
+          // Move the Firestore update outside setState
+          await _firestore.collection('trips').doc(tripId).update({
+            'locations': existingLocations,
+            'lastUpdated': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+    } catch (e) {
+      print('Error adding initial place: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error adding location: $e')),
+      );
     }
   }
 
   void _updateLocationControllers() {
+    // Dispose existing controllers
+    for (var controller in _locationControllers) {
+      controller.dispose();
+    }
+
+    // Create new controllers
     _locationControllers = List.generate(
-      _selectedLocations.length + 1,
+      (_selectedLocations.isEmpty ? 1 : _selectedLocations.length + 1),
       (index) {
         var controller = TextEditingController();
         if (index < _selectedLocations.length) {
@@ -832,6 +973,15 @@ class _TripPlanPageState extends State<TripPlanPage> {
         }
         return controller;
       },
+    );
+
+    // Update focus nodes
+    for (var node in _locationFocusNodes) {
+      node.dispose();
+    }
+    _locationFocusNodes = List.generate(
+      _locationControllers.length,
+      (index) => FocusNode()..addListener(() => _setupLocationInput(index)),
     );
   }
 
@@ -922,39 +1072,55 @@ class _TripPlanPageState extends State<TripPlanPage> {
 
   void _clearLocations() async {
     try {
-      final tripId = _currentTripId ?? await _sessionManager.getSessionTripId();
-      if (tripId != null) {
-        // Clear UI state first
-        setState(() {
-          _selectedLocations.clear();
-          _tripStateManager.locations.clear(); // Clear TripStateManager state
+      String? tripId =
+          _currentTripId ?? await _sessionManager.getSessionTripId();
+      if (tripId == null) return;
 
-          // Dispose old controllers and nodes
-          for (var controller in _locationControllers) {
-            controller.dispose();
+      // Clear UI state first
+      setState(() {
+        _selectedLocations.clear();
+        _tripStateManager.locations.clear();
+        _searchResultsMap.clear();
+        _showSearchResults = false;
+        _activeSearchIndex = -1;
+
+        // Dispose old controllers and nodes
+        for (var controller in _locationControllers) {
+          controller.dispose();
+        }
+        for (var node in _locationFocusNodes) {
+          node.dispose();
+        }
+
+        // Initialize with one empty controller and focus node
+        _locationControllers = [TextEditingController()];
+        _locationFocusNodes = [FocusNode()];
+
+        // Clear map markers and routes
+        _markers.clear();
+        _routes.clear();
+      });
+
+      // Set up the input field after state is cleared
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _setupLocationInput(0);
+        // Request focus after a short delay to ensure the widget is built
+        Future.delayed(Duration(milliseconds: 100), () {
+          if (_locationFocusNodes.isNotEmpty && mounted) {
+            _locationFocusNodes[0].requestFocus();
           }
-          for (var node in _locationFocusNodes) {
-            node.dispose();
-          }
-
-          // Initialize with one empty controller
-          _locationControllers = [TextEditingController()];
-          _locationFocusNodes = [FocusNode()];
-          _setupLocationInput(0);
-          _markers.clear();
-          _routes.clear();
         });
+      });
 
-        // Update Firestore with empty locations
-        await _firestore.collection('trips').doc(tripId).update({
-          'locations': [],
-          'lastUpdated': FieldValue.serverTimestamp(),
-        });
-      }
+      // Update Firestore
+      await _firestore.collection('trips').doc(tripId).update({
+        'locations': [],
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
       print('Error clearing locations: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to clear locations: $e')),
+        SnackBar(content: Text('Failed to clear locations')),
       );
     }
   }
@@ -988,6 +1154,58 @@ class _TripPlanPageState extends State<TripPlanPage> {
       await batch.commit();
     } catch (e) {
       print('Error updating trip status: $e');
+    }
+  }
+
+  Future<void> _syncLocations(List<TripLocation> locations) async {
+    try {
+      String? tripId =
+          _currentTripId ?? await _sessionManager.getSessionTripId();
+      if (tripId == null) return;
+
+      // Update local state
+      setState(() {
+        _selectedLocations = List.from(locations);
+        _tripStateManager.locations = List.from(locations);
+
+        // Update controllers and focus nodes
+        for (var controller in _locationControllers) {
+          controller.dispose();
+        }
+        for (var node in _locationFocusNodes) {
+          node.dispose();
+        }
+
+        _locationControllers = List.generate(
+          locations.isEmpty ? 1 : locations.length + 1,
+          (index) {
+            var controller = TextEditingController();
+            if (index < locations.length) {
+              controller.text = locations[index].name;
+            }
+            return controller;
+          },
+        );
+
+        _locationFocusNodes = List.generate(
+          _locationControllers.length,
+          (index) => FocusNode()..addListener(() => _setupLocationInput(index)),
+        );
+
+        _updateMapMarkers();
+        _updateRoutes();
+      });
+
+      // Update database
+      await _firestore.collection('trips').doc(tripId).update({
+        'locations': locations.map((loc) => loc.toMap()).toList(),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error syncing locations: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to sync locations')),
+      );
     }
   }
 }

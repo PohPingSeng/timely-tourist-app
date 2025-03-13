@@ -291,38 +291,64 @@ class _RecommendationPageState extends State<RecommendationPage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    TextButton.icon(
-                      onPressed: () async {
-                        // Navigate to TripPlan and add the new location
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => TripPlanPage(
-                              userEmail: widget.userEmail,
-                              initialPlace: {
-                                'place_id': place['place_id'],
-                                'name': place['name'],
-                              },
+                    Expanded(
+                      child: Wrap(
+                        spacing: 8,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () async {
+                              if (place['place_id'] == null || place['name'] == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Invalid place data')),
+                                );
+                                return;
+                              }
+                              
+                              try {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => TripPlanPage(
+                                      userEmail: widget.userEmail,
+                                      initialPlace: {
+                                        'place_id': place['place_id'],
+                                        'name': place['name'],
+                                      },
+                                    ),
+                                  ),
+                                );
+                              } catch (e) {
+                                print('Error navigating to TripPlan: $e');
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Error adding location to trip')),
+                                );
+                              }
+                            },
+                            icon: Icon(Icons.add, size: 20),
+                            label: Text(
+                              'Add to my trip',
+                              style: TextStyle(fontSize: 13),
                             ),
                           ),
-                        );
-                      },
-                      icon: Icon(Icons.add),
-                      label: Text('Add to my trip'),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => TourDetailsPage(
-                              tourData: place,
-                              userEmail: widget.userEmail,
+                          TextButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => TourDetailsPage(
+                                    tourData: place,
+                                    userEmail: widget.userEmail,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Text(
+                              'More Details',
+                              style: TextStyle(fontSize: 13),
                             ),
                           ),
-                        );
-                      },
-                      child: Text('More Details'),
+                        ],
+                      ),
                     ),
                   ],
                 ),
