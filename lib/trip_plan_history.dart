@@ -109,21 +109,48 @@ class _TripPlanHistoryPageState extends State<TripPlanHistoryPage> {
                   final locations =
                       List<Map<String, dynamic>>.from(data['locations'] ?? []);
 
-                  // Build location string based on number of locations
-                  String locationText;
+                  // Build location string with proper wrapping
+                  Widget locationDisplay;
                   if (locations.isEmpty) {
-                    locationText = 'No locations added';
-                  } else if (locations.length == 1) {
-                    locationText = locations.first['name'];
-                  } else if (locations.length == 2) {
-                    locationText =
-                        '${locations.first['name']} → ${locations.last['name']}';
+                    locationDisplay = Text(
+                      'No locations added',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        height: 1.3,
+                      ),
+                    );
                   } else {
-                    // For 3 or more locations, show first → middle → last
-                    final middleIndex = (locations.length / 2).floor();
-                    locationText = '${locations.first['name']} → '
-                        '${locations[middleIndex]['name']} → '
-                        '${locations.last['name']}';
+                    locationDisplay = Wrap(
+                      spacing: 4,
+                      children: [
+                        ...locations.asMap().entries.map((entry) {
+                          final isLast = entry.key == locations.length - 1;
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  entry.value['name'] ?? '',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.3,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (!isLast)
+                                Text(
+                                  ' → ',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                            ],
+                          );
+                        }).toList(),
+                      ],
+                    );
                   }
 
                   final bool isCurrentTrip = data['isCurrentTrip'] ?? false;
@@ -162,15 +189,7 @@ class _TripPlanHistoryPageState extends State<TripPlanHistoryPage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    locationText,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w500,
-                                      height: 1.3,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                                  locationDisplay,
                                   SizedBox(height: 4),
                                   Row(
                                     children: [
@@ -283,12 +302,6 @@ class _TripPlanHistoryPageState extends State<TripPlanHistoryPage> {
               try {
                 print('Attempting to delete trip: $tripId'); // Debug print
                 await _firestore.collection('trips').doc(tripId).delete();
-
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Trip deleted successfully')),
-                  );
-                }
               } catch (e) {
                 print('Delete error: $e'); // Debug print
                 if (mounted) {
