@@ -267,6 +267,23 @@ class _TripPlanPageState extends State<TripPlanPage> {
           ),
         );
 
+        // Get current trip ID first
+        String? tripId =
+            _currentTripId ?? await _sessionManager.getSessionTripId();
+
+        if (tripId == null) {
+          // Create a new trip if no current trip exists
+          final newTripRef = await _firestore.collection('trips').add({
+            'userEmail': widget.userEmail,
+            'isCurrentTrip': true,
+            'createdAt': FieldValue.serverTimestamp(),
+            'locations': [],
+          });
+          tripId = newTripRef.id;
+          _currentTripId = tripId;
+          await _sessionManager.setSessionTripId(tripId);
+        }
+
         setState(() {
           _showSearchResults = false;
           _activeSearchIndex = -1;
@@ -289,13 +306,32 @@ class _TripPlanPageState extends State<TripPlanPage> {
           _updateRoutes();
         });
 
-        // Save to Firestore to persist the locations
-        await _saveLocations();
+        // Update Firestore with the new location
+        try {
+          await _firestore.collection('trips').doc(tripId).set({
+            'userEmail': widget.userEmail,
+            'locations': _selectedLocations.map((loc) => loc.toMap()).toList(),
+            'lastUpdated': FieldValue.serverTimestamp(),
+            'isCurrentTrip': true,
+          }, SetOptions(merge: true));
+        } catch (dbError) {
+          print('Database error: $dbError');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Failed to save location. Please check your internet connection and try again.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
       }
     } catch (e) {
       print('Error getting place details: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error getting place details: $e')),
+        SnackBar(
+          content: Text('Error adding location. Please try again.'),
+          duration: Duration(seconds: 3),
+        ),
       );
     }
   }
