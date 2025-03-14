@@ -34,6 +34,19 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
   @override
   void initState() {
     super.initState();
+    // Initialize markers
+    _markers = {
+      Marker(
+        markerId: MarkerId('origin'),
+        position: widget.origin.latLng,
+        infoWindow: InfoWindow(title: widget.origin.name),
+      ),
+      Marker(
+        markerId: MarkerId('destination'),
+        position: widget.destination.latLng,
+        infoWindow: InfoWindow(title: widget.destination.name),
+      ),
+    };
     _fetchRouteOptions();
   }
 
@@ -319,8 +332,8 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
         ),
       ),
       body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Location info container
           Container(
             padding: EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -346,206 +359,206 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
               ),
             ),
           ),
-          if (_transitOptions.isEmpty)
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.alt_route,
-                      size: 48,
-                      color: Colors.grey[400],
-                    ),
-                    SizedBox(height: 16),
-                    Text(
-                      'No routes available',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                itemCount: _transitOptions.length,
-                itemBuilder: (context, index) {
-                  final option = _transitOptions[index];
-                  final color = _getModeColor(option.mode);
 
-                  return Container(
-                    margin: EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: Offset(0, 2),
+          // Route options list
+          Expanded(
+            child: _transitOptions.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.alt_route,
+                          size: 48,
+                          color: Colors.grey[400],
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          'No routes available',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 16,
+                          ),
                         ),
                       ],
                     ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          // Update selection
-                          setState(() {
-                            for (var opt in _transitOptions) {
-                              opt.isBest = false;
-                            }
-                            option.isBest = true;
-                          });
+                  )
+                : ListView.builder(
+                    itemCount: _transitOptions.length,
+                    itemBuilder: (context, index) {
+                      final option = _transitOptions[index];
+                      final color = _getModeColor(option.mode);
 
-                          // Notify parent
-                          if (widget.onRouteSelected != null) {
-                            widget.onRouteSelected!(option);
-                          }
-                        },
-                        child: Stack(
-                          children: [
-                            Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Row(
-                                children: [
-                                  // Selection indicator (plus or check)
-                                  Container(
-                                    width: 24,
-                                    height: 24,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: _isCurrentRoute(option)
-                                          ? color
-                                          : Colors.grey[100],
-                                    ),
-                                    child: Icon(
-                                      _isCurrentRoute(option)
-                                          ? Icons.check
-                                          : Icons.add,
-                                      size: 16,
-                                      color: _isCurrentRoute(option)
-                                          ? Colors.white
-                                          : Colors.grey[400],
-                                    ),
-                                  ),
-                                  SizedBox(width: 16),
-                                  // Mode icon with colored background
-                                  Container(
-                                    padding: EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: color.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Icon(
-                                      _getModeIcon(option.mode),
-                                      color: color,
-                                      size: 20,
-                                    ),
-                                  ),
-                                  SizedBox(width: 16),
-                                  // Route details
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          option.isMultiModal
-                                              ? option.viaRoute ??
-                                                  _getModeString(option.mode)
-                                              : _getModeString(option.mode),
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w500,
-                                            color: Colors.grey[900],
-                                          ),
+                      return Container(
+                        margin: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () {
+                              // Update selection
+                              setState(() {
+                                for (var opt in _transitOptions) {
+                                  opt.isBest = false;
+                                }
+                                option.isBest = true;
+                              });
+
+                              // Notify parent
+                              if (widget.onRouteSelected != null) {
+                                widget.onRouteSelected!(option);
+                              }
+                            },
+                            child: Stack(
+                              children: [
+                                Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Row(
+                                    children: [
+                                      // Selection indicator (plus or check)
+                                      Container(
+                                        width: 24,
+                                        height: 24,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: _isCurrentRoute(option)
+                                              ? color
+                                              : Colors.grey[100],
                                         ),
-                                        SizedBox(height: 4),
-                                        Row(
+                                        child: Icon(
+                                          _isCurrentRoute(option)
+                                              ? Icons.check
+                                              : Icons.add,
+                                          size: 16,
+                                          color: _isCurrentRoute(option)
+                                              ? Colors.white
+                                              : Colors.grey[400],
+                                        ),
+                                      ),
+                                      SizedBox(width: 16),
+                                      // Mode icon with colored background
+                                      Container(
+                                        padding: EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: color.withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Icon(
+                                          _getModeIcon(option.mode),
+                                          color: color,
+                                          size: 20,
+                                        ),
+                                      ),
+                                      SizedBox(width: 16),
+                                      // Route details
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              option.duration,
+                                              option.isMultiModal
+                                                  ? option.viaRoute ??
+                                                      _getModeString(
+                                                          option.mode)
+                                                  : _getModeString(option.mode),
                                               style: TextStyle(
-                                                color: Colors.grey[600],
-                                                fontSize: 14,
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.grey[900],
                                               ),
                                             ),
-                                            Text(
-                                              ' · ${option.distance}',
-                                              style: TextStyle(
-                                                color: Colors.grey[600],
-                                                fontSize: 14,
-                                              ),
+                                            SizedBox(height: 4),
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  option.duration,
+                                                  style: TextStyle(
+                                                    color: Colors.grey[600],
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  ' · ${option.distance}',
+                                                  style: TextStyle(
+                                                    color: Colors.grey[600],
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ],
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                  // Price and arrow
-                                  Row(
-                                    children: [
-                                      if (option.price.isNotEmpty)
-                                        Text(
-                                          option.price,
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                            color: Colors.grey[900],
+                                      ),
+                                      // Price and arrow
+                                      Row(
+                                        children: [
+                                          if (option.price.isNotEmpty)
+                                            Text(
+                                              option.price,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.grey[900],
+                                              ),
+                                            ),
+                                          Icon(
+                                            Icons.chevron_right,
+                                            color: Colors.grey[400],
                                           ),
-                                        ),
-                                      Icon(
-                                        Icons.chevron_right,
-                                        color: Colors.grey[400],
+                                        ],
                                       ),
                                     ],
                                   ),
-                                ],
-                              ),
-                            ),
-                            // BEST label
-                            if (index == 0)
-                              Positioned(
-                                top: 0,
-                                right: 0,
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green,
-                                    borderRadius: BorderRadius.only(
-                                      topRight: Radius.circular(12),
-                                      bottomLeft: Radius.circular(8),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'BEST',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
                                 ),
-                              ),
-                          ],
+                                // BEST label
+                                if (index == 0)
+                                  Positioned(
+                                    top: 0,
+                                    right: 0,
+                                    child: Container(
+                                      padding: EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.green,
+                                        borderRadius: BorderRadius.only(
+                                          topRight: Radius.circular(12),
+                                          bottomLeft: Radius.circular(8),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'BEST',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          _buildMapSection(),
+                      );
+                    },
+                  ),
+          ),
         ],
       ),
     );
@@ -654,64 +667,5 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
 
   bool _isCurrentRoute(TransitOption option) {
     return option.isBest;
-  }
-
-  Widget _buildMapSection() {
-    return Stack(
-      children: [
-        GoogleMap(
-          initialCameraPosition: CameraPosition(
-            target: widget.origin.latLng,
-            zoom: 12,
-          ),
-          onMapCreated: (controller) {
-            _mapController = controller;
-            Future.delayed(Duration(milliseconds: 300), () {
-              _fitMapBounds();
-            });
-          },
-          markers: _markers,
-          polylines: _routes,
-          myLocationEnabled: true,
-          zoomControlsEnabled: false,
-          mapToolbarEnabled: false,
-          zoomGesturesEnabled: true,
-        ),
-        // Add recenter button
-        Positioned(
-          bottom: 16,
-          right: 16,
-          child: FloatingActionButton(
-            mini: true,
-            backgroundColor: Colors.white,
-            child: Icon(Icons.center_focus_strong, color: Colors.black87),
-            onPressed: _fitMapBounds,
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _fitMapBounds() {
-    if (_mapController == null) return;
-
-    // Calculate bounds for origin and destination
-    final bounds = LatLngBounds(
-      southwest: LatLng(
-        min(widget.origin.latLng.latitude, widget.destination.latLng.latitude),
-        min(widget.origin.latLng.longitude,
-            widget.destination.latLng.longitude),
-      ),
-      northeast: LatLng(
-        max(widget.origin.latLng.latitude, widget.destination.latLng.latitude),
-        max(widget.origin.latLng.longitude,
-            widget.destination.latLng.longitude),
-      ),
-    );
-
-    // Add padding
-    _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 50),
-    );
   }
 }
