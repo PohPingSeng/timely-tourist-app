@@ -91,14 +91,42 @@ class _TripPlanHistoryPageState extends State<TripPlanHistoryPage> {
             stream: _firestore
                 .collection('trips')
                 .where('userEmail', isEqualTo: widget.userEmail)
-                .orderBy('lastUpdated', descending: true)
+                .orderBy('createdAt', descending: true)
                 .snapshots(),
             builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return SizedBox();
+              if (snapshot.hasError) {
+                return Center(
+                  child: Text('Error loading trips: ${snapshot.error}'),
+                );
+              }
+
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Center(
+                  child: CircularProgressIndicator(),
+                );
               }
 
               final trips = snapshot.data?.docs ?? [];
+
+              if (trips.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.luggage_outlined,
+                          size: 48, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        'No trips yet',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
 
               return ListView.builder(
                 padding: EdgeInsets.fromLTRB(16, 16, 16, 80),
@@ -108,88 +136,49 @@ class _TripPlanHistoryPageState extends State<TripPlanHistoryPage> {
                   final data = trip.data() as Map<String, dynamic>;
                   final locations =
                       List<Map<String, dynamic>>.from(data['locations'] ?? []);
-
-                  // Build location string with proper wrapping
-                  Widget locationDisplay;
-                  if (locations.isEmpty) {
-                    locationDisplay = Text(
-                      'No locations added',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w500,
-                        height: 1.3,
-                      ),
-                    );
-                  } else {
-                    locationDisplay = Wrap(
-                      spacing: 4,
-                      children: [
-                        ...locations.asMap().entries.map((entry) {
-                          final isLast = entry.key == locations.length - 1;
-                          return Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  entry.value['name'] ?? '',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    height: 1.3,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (!isLast)
-                                Text(
-                                  ' → ',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                            ],
-                          );
-                        }).toList(),
-                      ],
-                    );
-                  }
-
-                  final bool isCurrentTrip = data['isCurrentTrip'] ?? false;
+                  final isCurrentTrip = data['isCurrentTrip'] ?? false;
 
                   return Card(
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
-                      side: BorderSide(color: Colors.grey[300]!),
+                      side: BorderSide(
+                        color: isCurrentTrip
+                            ? Colors.blue[300]!
+                            : Colors.grey[300]!,
+                        width: isCurrentTrip ? 2.0 : 1.0,
+                      ),
                     ),
                     child: InkWell(
                       onTap: () {
-                        if (!isCurrentTrip) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => TripPlanPage(
-                                userEmail: widget.userEmail,
-                                savedLocations: locations
-                                    .map((loc) => TripLocation.fromMap(loc))
-                                    .toList(),
-                                tripId: trip.id,
-                              ),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => TripPlanPage(
+                              userEmail: widget.userEmail,
+                              savedLocations: locations
+                                  .map((loc) => TripLocation.fromMap(loc))
+                                  .toList(),
+                              tripId: trip.id,
                             ),
-                          );
-                        }
+                          ),
+                        );
                       },
                       child: Padding(
                         padding: EdgeInsets.all(16),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.luggage_outlined),
+                            Icon(
+                              Icons.luggage_outlined,
+                              color: isCurrentTrip ? Colors.blue : null,
+                            ),
                             SizedBox(width: 16),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  locationDisplay,
+                                  _buildLocationsList(locations),
                                   SizedBox(height: 4),
                                   Row(
                                     children: [
@@ -204,7 +193,9 @@ class _TripPlanHistoryPageState extends State<TripPlanHistoryPage> {
                                         SizedBox(width: 8),
                                         Container(
                                           padding: EdgeInsets.symmetric(
-                                              horizontal: 6, vertical: 2),
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: Colors.blue.withOpacity(0.1),
                                             borderRadius:
@@ -243,11 +234,52 @@ class _TripPlanHistoryPageState extends State<TripPlanHistoryPage> {
               );
             },
           ),
-
-          // New Trip Button
           _buildNewTripButton(),
         ],
       ),
+    );
+  }
+
+  Widget _buildLocationsList(List<Map<String, dynamic>> locations) {
+    if (locations.isEmpty) {
+      return Text(
+        'No locations added',
+        style: TextStyle(
+          fontWeight: FontWeight.w500,
+          height: 1.3,
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: locations.asMap().entries.map((entry) {
+        final isLast = entry.key == locations.length - 1;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                entry.value['name'] ?? '',
+                style: TextStyle(
+                  fontWeight: FontWeight.w500,
+                  height: 1.3,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (!isLast)
+              Text(
+                ' → ',
+                style: TextStyle(
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[600],
+                ),
+              ),
+          ],
+        );
+      }).toList(),
     );
   }
 

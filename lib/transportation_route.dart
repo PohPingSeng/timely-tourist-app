@@ -34,6 +34,7 @@ class TransitOption {
   final String? viaRoute;
   final bool hasTolls;
   final bool isMultiModal;
+  bool isSelected;
 
   TransitOption({
     required this.mode,
@@ -48,6 +49,7 @@ class TransitOption {
     this.viaRoute,
     this.hasTolls = false,
     this.isMultiModal = false,
+    this.isSelected = false,
   });
 
   TransitOption copyWith({
@@ -63,6 +65,7 @@ class TransitOption {
     String? viaRoute,
     bool? hasTolls,
     bool? isMultiModal,
+    bool? isSelected,
   }) {
     return TransitOption(
       mode: mode ?? this.mode,
@@ -77,6 +80,7 @@ class TransitOption {
       viaRoute: viaRoute ?? this.viaRoute,
       hasTolls: hasTolls ?? this.hasTolls,
       isMultiModal: isMultiModal ?? this.isMultiModal,
+      isSelected: isSelected ?? this.isSelected,
     );
   }
 }
@@ -151,30 +155,90 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
 
       print('Fetching routes from ${origin.name} to ${destination.name}');
 
-      // Fetch all transit modes in parallel for better performance
       await Future.wait([
-        // 1. Fetch driving routes with different preferences
+        _fetchWalkingDirections(origin, destination),
         _fetchDrivingDirections(origin, destination, preferHighways: true),
         _fetchDrivingDirections(origin, destination, preferHighways: false),
         _fetchMotorcycleDirections(origin, destination),
-
-        // 2. Fetch public transit routes
         _fetchPublicTransitRoutes(origin, destination),
-
-        // 3. For longer distances, check flight options
-        if (_isLongDistance(origin, destination))
-          _fetchFlightOptions(origin, destination),
-
-        // 4. Fetch multi-modal options
-        _fetchMultiModalOptions(origin, destination),
       ]);
 
-      // Sort options by duration and price
       _sortAndMarkBestOptions();
     } catch (e) {
       print('Error fetching routes: $e');
     } finally {
       setState(() => _isFetchingRoutes = false);
+    }
+  }
+
+  Future<void> _fetchWalkingDirections(
+      TripLocation origin, TripLocation destination) async {
+    final url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+
+    final headers = {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': _apiKey,
+      'X-Goog-FieldMask':
+          'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.travelAdvisory,routes.walkingDetails'
+    };
+
+    final body = jsonEncode({
+      "origin": {
+        "location": {
+          "latLng": {
+            "latitude": origin.latLng.latitude,
+            "longitude": origin.latLng.longitude
+          }
+        }
+      },
+      "destination": {
+        "location": {
+          "latLng": {
+            "latitude": destination.latLng.latitude,
+            "longitude": destination.latLng.longitude
+          }
+        }
+      },
+      "travelMode": "WALK",
+      "routingPreference": "WALK_SAFER",
+      "computeAlternativeRoutes": true,
+      "routeModifiers": {
+        "avoidHighways": true,
+        "avoidTolls": true,
+        "avoidIndoor": false
+      },
+      "languageCode": "en-US",
+      "units": "METRIC"
+    });
+
+    try {
+      final response =
+          await http.post(Uri.parse(url), headers: headers, body: body);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['routes'] != null) {
+          for (var route in data['routes']) {
+            final distanceMeters =
+                int.parse(route['distanceMeters'].toString());
+            if (distanceMeters <= 3000) {
+              // Only show walking routes under 3km
+              bool isRouteSafe = true;
+              if (route['travelAdvisory'] != null) {
+                final warnings = route['travelAdvisory']['warnings'] as List?;
+                isRouteSafe = warnings == null || warnings.isEmpty;
+              }
+
+              if (isRouteSafe) {
+                _addTransitOption(
+                    route, TransitMode.walking, origin.name, destination.name,
+                    viaRoute: _getWalkingRouteName(route), price: 'Free');
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('Error fetching walking directions: $e');
     }
   }
 
@@ -444,6 +508,15 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     // Lower score is better
     double score = _parseDuration(option.duration).toDouble();
 
+    // Prefer walking for very short distances (under 1km)
+    if (option.mode == TransitMode.walking) {
+      final distance =
+          double.parse(option.distance.split(' ')[0]); // Extract km value
+      if (distance <= 1) {
+        score *= 0.8; // Make walking more attractive for short distances
+      }
+    }
+
     // Prefer routes without tolls
     if (option.hasTolls) score += 30;
 
@@ -453,19 +526,6 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     }
 
     return score;
-  }
-
-  String _calculatePrice(
-      TransitMode mode, int distanceInMeters, Map<String, dynamic>? routeData,
-      {bool hasTolls = false}) {
-    // Get fare from API response if available
-    if (routeData != null && routeData['fare'] != null) {
-      final fare = routeData['fare'];
-      return '${fare['currency']} ${fare['amount']}';
-    }
-
-    // If no fare data available, return price range
-    return 'Price varies';
   }
 
   void _addTransitOption(
@@ -490,9 +550,8 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     final distanceKm = (distanceInMeters / 1000).toStringAsFixed(1);
     final distanceText = '$distanceKm km';
 
-    // Use provided price or calculate from route data
-    final routePrice = price ??
-        _calculatePrice(mode, distanceInMeters, route, hasTolls: hasTolls);
+    // Use provided price or default to 'Price varies'
+    final routePrice = price ?? 'Price varies';
 
     _transitOptions.add(TransitOption(
       mode: mode,
@@ -507,12 +566,15 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
       viaRoute: viaRoute,
       hasTolls: hasTolls,
       isMultiModal: isMultiModal,
+      isSelected: false,
     ));
 
     _routes.add(_createPolyline(
       '${mode.toString()}_${_transitOptions.length}',
       _decodePolyline(route['polyline']['encodedPolyline']),
       _getModeColor(mode),
+      mode: mode,
+      isSelected: false,
     ));
   }
 
@@ -615,12 +677,21 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     return points;
   }
 
-  Polyline _createPolyline(String id, List<LatLng> points, Color color) {
+  Polyline _createPolyline(
+    String id,
+    List<LatLng> points,
+    Color color, {
+    TransitMode? mode,
+    bool isSelected = false,
+  }) {
     return Polyline(
       polylineId: PolylineId(id),
       points: points,
       color: color,
-      width: 4,
+      width: isSelected ? 6 : 4,
+      patterns: mode == TransitMode.walking
+          ? [PatternItem.dot, PatternItem.gap(8)]
+          : [],
     );
   }
 
@@ -792,13 +863,13 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
             child: Column(
               children: [
                 _buildLocationField(
-                  widget.locations[0],
+                  location: widget.locations[0],
                   isOrigin: true,
                   onRemove: () => _handleLocationRemoval(widget.locations[0]),
                 ),
                 SizedBox(height: 8),
                 _buildLocationField(
-                  widget.locations[1],
+                  location: widget.locations[1],
                   isOrigin: false,
                   onRemove: () => _handleLocationRemoval(widget.locations[1]),
                 ),
@@ -814,8 +885,11 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     );
   }
 
-  Widget _buildLocationField(TripLocation location,
-      {required bool isOrigin, required Function() onRemove}) {
+  Widget _buildLocationField({
+    required TripLocation location,
+    required bool isOrigin,
+    required Function() onRemove,
+  }) {
     return Row(
       children: [
         Expanded(
@@ -1152,30 +1226,32 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
   }
 
   void _highlightRoute(String polyline) {
-    // Create a new set of routes with only the selected route
-    final selectedRoute = _transitOptions.firstWhere(
-      (option) => option.polyline == polyline,
-      orElse: () => _transitOptions.first,
-    );
-
-    // Generate a unique ID for this route
-    final routeId =
-        '${selectedRoute.mode.toString()}_${DateTime.now().millisecondsSinceEpoch}';
-    _selectedRouteId = routeId;
-
-    // Create a new set of polylines with just the selected route
-    final newRoutes = <Polyline>{};
-    newRoutes.add(
-      Polyline(
-        polylineId: PolylineId(routeId),
-        points: _decodePolyline(polyline),
-        color: _getModeColor(selectedRoute.mode),
-        width: 6, // Make the selected route thicker
-      ),
-    );
-
     setState(() {
-      _routes = newRoutes;
+      // Clear existing routes
+      _routes.clear();
+      _selectedRouteId = DateTime.now().millisecondsSinceEpoch.toString();
+
+      // Update selection state for all options
+      for (var i = 0; i < _transitOptions.length; i++) {
+        final isSelected = _transitOptions[i].polyline == polyline;
+        _transitOptions[i] =
+            _transitOptions[i].copyWith(isSelected: isSelected);
+      }
+
+      // Find the selected option
+      final selectedOption = _transitOptions.firstWhere(
+        (option) => option.polyline == polyline,
+        orElse: () => _transitOptions.first,
+      );
+
+      // Add only the selected route with highlighted style
+      _routes.add(_createPolyline(
+        _selectedRouteId,
+        _decodePolyline(polyline),
+        _getModeColor(selectedOption.mode),
+        mode: selectedOption.mode,
+        isSelected: true,
+      ));
     });
   }
 
@@ -1466,524 +1542,27 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     return minutes;
   }
 
-  // Add this method to generate mock data
-  void _addMockRoutes() {
-    if (_transitOptions.isEmpty) {
-      print('Adding mock routes for testing');
-
-      // Get the start and end points
-      final origin = widget.locations.first;
-      final destination = widget.locations[1];
-
-      // Check if flight is needed
-      bool flightNeeded = _isFlightNeeded(origin, destination);
-
-      // Calculate distance
-      final distanceInKm =
-          _calculateStraightLineDistance(origin.latLng, destination.latLng);
-
-      if (flightNeeded) {
-        // Create mock polylines for different routes
-        final flightPolyline =
-            _createMockPolyline(origin.latLng, destination.latLng, 0);
-        final busFlightPolyline =
-            _createMockPolyline(origin.latLng, destination.latLng, 0.02);
-
-        // Flight duration (assuming 800 km/h average speed)
-        final flightDurationMinutes = (distanceInKm / 800 * 60).round();
-        final flightHours = flightDurationMinutes ~/ 60;
-        final flightMinutes = flightDurationMinutes % 60;
-        final flightTimeFormatted = flightHours > 0
-            ? '${flightHours}h ${flightMinutes}min'
-            : '${flightMinutes} mins';
-
-        // Bus to airport + flight duration
-        final busFlightDurationMinutes = flightDurationMinutes +
-            180; // 3 hours for bus and airport procedures
-        final busFlightHours = busFlightDurationMinutes ~/ 60;
-        final busFlightMinutes = busFlightDurationMinutes % 60;
-        final busFlightTimeFormatted =
-            '${busFlightHours}h ${busFlightMinutes}min';
-
-        // Add direct flight option
-        _transitOptions.add(TransitOption(
-          mode: TransitMode.flight,
-          duration: flightTimeFormatted,
-          distance: '$distanceInKm km',
-          price:
-              'MYR${(distanceInKm * 0.15).round()}-${(distanceInKm * 0.2).round()}',
-          isBest: true,
-          steps: [],
-          polyline: flightPolyline,
-          origin: origin.name,
-          destination: destination.name,
-        ));
-
-        // Add route polyline to map
-        _routes.add(_createPolyline(
-          'flight',
-          _decodePolyline(flightPolyline),
-          Colors.indigo,
-        ));
-
-        // Add bus + flight option
-        _transitOptions.add(TransitOption(
-          mode: TransitMode.bus, // We'll customize the display in the UI
-          duration: busFlightTimeFormatted,
-          distance: '$distanceInKm km',
-          price:
-              'MYR${(distanceInKm * 0.15 + 10).round()}-${(distanceInKm * 0.2 + 10).round()}',
-          isBest: false,
-          steps: [],
-          polyline: busFlightPolyline,
-          origin: origin.name,
-          destination: destination.name,
-        ));
-
-        // Add route polyline to map
-        _routes.add(_createPolyline(
-          'busFlight',
-          _decodePolyline(busFlightPolyline),
-          Colors.deepOrange,
-        ));
-      } else {
-        // For shorter distances, use the existing mock data approach
-        // Create mock polylines for different routes
-        final drivingPolyline =
-            _createMockPolyline(origin.latLng, destination.latLng, 0.01);
-        final busPolyline =
-            _createMockPolyline(origin.latLng, destination.latLng, -0.01);
-        final trainPolyline =
-            _createMockPolyline(origin.latLng, destination.latLng, 0.02);
-
-        // Format times based on distance
-        final drivingTimeMinutes = (distanceInKm / 60 * 60).round(); // 60 km/h
-        final busTimeMinutes = (distanceInKm / 40 * 60).round(); // 40 km/h
-        final trainTimeMinutes = (distanceInKm / 80 * 60).round(); // 80 km/h
-
-        final drivingHours = drivingTimeMinutes ~/ 60;
-        final drivingMinutes = drivingTimeMinutes % 60;
-        final drivingTimeFormatted = drivingHours > 0
-            ? '${drivingHours}h ${drivingMinutes}min'
-            : '${drivingMinutes} mins';
-
-        final busHours = busTimeMinutes ~/ 60;
-        final busMinutes = busTimeMinutes % 60;
-        final busTimeFormatted = busHours > 0
-            ? '${busHours}h ${busMinutes}min'
-            : '${busMinutes} mins';
-
-        final trainHours = trainTimeMinutes ~/ 60;
-        final trainMinutes = trainTimeMinutes % 60;
-        final trainTimeFormatted = trainHours > 0
-            ? '${trainHours}h ${trainMinutes}min'
-            : '${trainMinutes} mins';
-
-        // Add driving option
-        _transitOptions.add(TransitOption(
-          mode: TransitMode.driving,
-          duration: drivingTimeFormatted,
-          distance: '$distanceInKm km',
-          price:
-              'MYR${(5 + distanceInKm * 0.8).round()}-${(5 + distanceInKm * 1.2).round()}',
-          isBest: true,
-          steps: [],
-          polyline: drivingPolyline,
-          origin: origin.name,
-          destination: destination.name,
-        ));
-
-        // Add route polyline to map
-        _routes.add(_createPolyline(
-          'driving',
-          _decodePolyline(drivingPolyline),
-          Colors.blue,
-        ));
-
-        // Add bus option
-        _transitOptions.add(TransitOption(
-          mode: TransitMode.bus,
-          duration: busTimeFormatted,
-          distance: '$distanceInKm km',
-          price:
-              'MYR${(2 + distanceInKm * 0.15).round()}-${(2 + distanceInKm * 0.2).round()}',
-          isBest: false,
-          steps: [],
-          polyline: busPolyline,
-          origin: origin.name,
-          destination: destination.name,
-        ));
-
-        // Add route polyline to map
-        _routes.add(_createPolyline(
-          'bus',
-          _decodePolyline(busPolyline),
-          Colors.red,
-        ));
-
-        // Add train option
-        _transitOptions.add(TransitOption(
-          mode: TransitMode.train,
-          duration: trainTimeFormatted,
-          distance: '$distanceInKm km',
-          price:
-              'MYR${(5 + distanceInKm * 0.18).round()}-${(5 + distanceInKm * 0.25).round()}',
-          isBest: false,
-          steps: [],
-          polyline: trainPolyline,
-          origin: origin.name,
-          destination: destination.name,
-        ));
-
-        // Add route polyline to map
-        _routes.add(_createPolyline(
-          'train',
-          _decodePolyline(trainPolyline),
-          Colors.purple,
-        ));
-      }
-    }
-  }
-
-  // Helper method to create a mock polyline between two points
-  String _createMockPolyline(LatLng start, LatLng end, double offset) {
-    // Create a slightly curved path between the two points
-    final midLat = (start.latitude + end.latitude) / 2;
-    final midLng = (start.longitude + end.longitude) / 2 + offset;
-
-    final points = [start, LatLng(midLat, midLng), end];
-
-    return _encodePolyline(points);
-  }
-
-  // Encode a list of LatLng points into a polyline string
-  String _encodePolyline(List<LatLng> points) {
-    final result = StringBuffer();
-    int lastLat = 0;
-    int lastLng = 0;
-
-    for (final point in points) {
-      final lat = (point.latitude * 1e5).round();
-      final lng = (point.longitude * 1e5).round();
-
-      _encodeValue(result, lat - lastLat);
-      _encodeValue(result, lng - lastLng);
-
-      lastLat = lat;
-      lastLng = lng;
-    }
-
-    return result.toString();
-  }
-
-  void _encodeValue(StringBuffer result, int value) {
-    int v = value < 0 ? ~(value << 1) : (value << 1);
-    while (v >= 0x20) {
-      result.writeCharCode((0x20 | (v & 0x1f)) + 63);
-      v >>= 5;
-    }
-    result.writeCharCode(v + 63);
-  }
-
-  // Add this method to determine if flight is needed based on distance and location type
-  bool _isFlightNeeded(TripLocation origin, TripLocation destination) {
-    // Calculate straight-line distance
-    final distance =
-        _calculateStraightLineDistance(origin.latLng, destination.latLng);
-
-    // If distance is greater than 500km, suggest flight
-    if (distance > 500) {
-      return true;
-    }
-
-    // Check if locations are on different landmasses (simplified approach)
-    // In a real implementation, you would use a more sophisticated method to detect islands
-    // For now, we'll use a simple check based on known island locations in Malaysia
-    bool isOriginIsland = _isIslandLocation(origin.name);
-    bool isDestinationIsland = _isIslandLocation(destination.name);
-
-    // If one is on mainland and other is on island, flight is needed
-    if (isOriginIsland != isDestinationIsland) {
-      return true;
-    }
-
-    // If both are on different islands, flight is needed
-    if (isOriginIsland &&
-        isDestinationIsland &&
-        !_areOnSameIsland(origin.name, destination.name)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  // Helper method to check if a location is on an island
-  bool _isIslandLocation(String locationName) {
-    // List of known island locations in Malaysia
-    final islandLocations = [
-      'sabah', 'kota kinabalu', 'sandakan', 'tawau', 'lahad datu', // Borneo
-      'sarawak', 'kuching', 'miri', 'sibu', // Borneo
-      'penang', 'georgetown', // Penang Island
-      'langkawi', // Langkawi Island
-      'tioman', // Tioman Island
-      'perhentian', // Perhentian Islands
-      'redang', // Redang Island
-    ];
-
-    return islandLocations
-        .any((island) => locationName.toLowerCase().contains(island));
-  }
-
-  // Helper method to check if two island locations are on the same island
-  bool _areOnSameIsland(String location1, String location2) {
-    // Borneo locations (Sabah and Sarawak)
-    final borneoLocations = [
-      'sabah',
-      'kota kinabalu',
-      'sandakan',
-      'tawau',
-      'lahad datu',
-      'sarawak',
-      'kuching',
-      'miri',
-      'sibu',
-    ];
-
-    // Penang locations
-    final penangLocations = ['penang', 'georgetown'];
-
-    // Langkawi locations
-    final langkawiLocations = ['langkawi'];
-
-    // Check if both locations are on the same island
-    if (borneoLocations.any((loc) => location1.toLowerCase().contains(loc)) &&
-        borneoLocations.any((loc) => location2.toLowerCase().contains(loc))) {
-      return true;
-    }
-
-    if (penangLocations.any((loc) => location1.toLowerCase().contains(loc)) &&
-        penangLocations.any((loc) => location2.toLowerCase().contains(loc))) {
-      return true;
-    }
-
-    if (langkawiLocations.any((loc) => location1.toLowerCase().contains(loc)) &&
-        langkawiLocations.any((loc) => location2.toLowerCase().contains(loc))) {
-      return true;
-    }
-
-    return false;
-  }
-
-  // Add a method to fetch flight options
-  Future<bool> _fetchFlightOptions(
-      TripLocation origin, TripLocation destination) async {
-    // Use a flight search API like Amadeus, Skyscanner, or your preferred provider
-    final url = 'YOUR_FLIGHT_API_ENDPOINT';
-
-    try {
-      final response = await http.get(Uri.parse(url), headers: {
-        'Authorization': 'YOUR_FLIGHT_API_KEY',
-        // Other required headers
-      });
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        // Process real flight data and add flight options
-        // This will vary based on which flight API you use
-      }
-    } catch (e) {
-      print('Error fetching flight options: $e');
-    }
-
-    return true;
-  }
-
-  // Add a method to fetch multi-modal options (e.g., bus to airport, then flight)
-  Future<bool> _fetchMultiModalOptions(
-      TripLocation origin, TripLocation destination) async {
-    // In a real implementation, you would use a combination of APIs
-    // For now, we'll create a mock multi-modal option
-
-    final distance =
-        _calculateStraightLineDistance(origin.latLng, destination.latLng);
-
-    // Bus to airport duration (estimated)
-    final busDuration = 60; // 1 hour to airport
-
-    // Flight duration
-    final flightDuration =
-        (distance / 800 * 60).round(); // Assuming 800 km/h average speed
-
-    // Total duration
-    final totalDuration = busDuration +
-        flightDuration +
-        120; // Adding 2 hours for airport procedures
-
-    // Format total time
-    final hours = totalDuration ~/ 60;
-    final minutes = totalDuration % 60;
-    final durationText = '${hours}h ${minutes}min';
-
-    // Create a mock polyline for the multi-modal path
-    final multiModalPolyline =
-        _createMockPolyline(origin.latLng, destination.latLng, 0.02);
-
-    // Create a modified route object
-    final modifiedRoute = {
-      'legs': [
-        {
-          'duration': {'text': durationText},
-          'distance': {
-            'text': '${distance.toStringAsFixed(1)} km',
-            'value': distance * 1000
-          },
-          'steps': []
-        }
-      ],
-      'overview_polyline': {'points': multiModalPolyline}
-    };
-
-    // Add the multi-modal option with a special title
-    _transitOptions.add(TransitOption(
-      mode: TransitMode
-          .bus, // Using bus as the primary mode, but we'll customize the display
-      duration: durationText,
-      distance: '${distance.toStringAsFixed(1)} km',
-      price: _estimateMultiModalPrice(distance),
-      isBest: false,
-      steps: [],
-      polyline: multiModalPolyline,
-      origin: origin.name,
-      destination: destination.name,
-    ));
-
-    // Add route polyline to map
-    _routes.add(_createPolyline(
-      'multimodal',
-      _decodePolyline(multiModalPolyline),
-      Colors.deepOrange,
-    ));
-
-    return true;
-  }
-
-  // Estimate price for multi-modal transport
-  String _estimateMultiModalPrice(double distanceInKm) {
-    // Base bus fare
-    final busFare = 10;
-
-    // Flight fare based on distance
-    final minFlightFare = (50 + distanceInKm * 0.1).round();
-    final maxFlightFare = (50 + distanceInKm * 0.15).round();
-
-    return 'MYR${minFlightFare + busFare}-${maxFlightFare + busFare}';
-  }
-
-  Future<void> _fetchOptimizedRoute(List<TripLocation> locations) async {
-    final url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-
-    final headers = {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': _apiKey,
-      'X-Goog-FieldMask':
-          'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.optimizedIntermediateWaypointIndex'
-    };
-
-    // Create waypoints from locations
-    final intermediateWaypoints = locations
-        .sublist(1, locations.length - 1)
-        .map((loc) => {
-              "location": {
-                "latLng": {
-                  "latitude": loc.latLng.latitude,
-                  "longitude": loc.latLng.longitude
-                }
-              }
-            })
-        .toList();
-
-    final body = jsonEncode({
-      "origin": {
-        "location": {
-          "latLng": {
-            "latitude": locations.first.latLng.latitude,
-            "longitude": locations.first.latLng.longitude
-          }
-        }
-      },
-      "destination": {
-        "location": {
-          "latLng": {
-            "latitude": locations.last.latLng.latitude,
-            "longitude": locations.last.latLng.longitude
-          }
-        }
-      },
-      "intermediates": intermediateWaypoints,
-      "optimizeWaypointOrder": true,
-      "travelMode": "DRIVE",
-      "routingPreference": "TRAFFIC_AWARE",
-      "computeAlternativeRoutes": false,
-      "languageCode": "en-US",
-      "units": "METRIC"
-    });
-
-    try {
-      final response =
-          await http.post(Uri.parse(url), headers: headers, body: body);
-      // Handle response similar to other methods
-    } catch (e) {
-      print('Error fetching optimized route: $e');
-    }
-  }
-
-  // Add this method to check if distance is long enough for flight
-  bool _isLongDistance(TripLocation origin, TripLocation destination) {
-    // Calculate straight-line distance
-    final distance =
-        _calculateStraightLineDistance(origin.latLng, destination.latLng);
-
-    // If distance is greater than 500km, consider it long distance
-    if (distance > 500) {
-      return true;
-    }
-
-    // Check if locations are on different landmasses
-    bool isOriginIsland = _isIslandLocation(origin.name);
-    bool isDestinationIsland = _isIslandLocation(destination.name);
-
-    // If one is on mainland and other is on island, or both on different islands
-    if (isOriginIsland != isDestinationIsland ||
-        (isOriginIsland &&
-            isDestinationIsland &&
-            !_areOnSameIsland(origin.name, destination.name))) {
-      return true;
-    }
-
-    return false;
-  }
-
-  // Add method to sort and mark best options
+  // Add this method to sort and mark best options
   void _sortAndMarkBestOptions() {
     if (_transitOptions.isEmpty) return;
 
-    // Reset all isBest flags
+    // Reset all flags
     for (var option in _transitOptions) {
-      option.isBest = false;
+      option = option.copyWith(isBest: false, isSelected: false);
     }
 
-    // Sort by score (lower is better)
+    // Sort by score
     _transitOptions.sort(
         (a, b) => _calculateRouteScore(a).compareTo(_calculateRouteScore(b)));
 
-    // Mark the best option
-    _transitOptions.first = _transitOptions.first.copyWith(isBest: true);
+    // Mark the best option and select it
+    _transitOptions[0] = _transitOptions[0].copyWith(
+      isBest: true,
+      isSelected: true,
+    );
 
-    print('Found ${_transitOptions.length} routes');
-    for (var option in _transitOptions) {
-      print(
-          'Route: ${option.mode} - ${option.duration} - ${option.price} ${option.isBest ? '(BEST)' : ''}');
-    }
+    // Highlight the best route
+    _highlightRoute(_transitOptions[0].polyline);
   }
 
   // Add this method to handle location swapping
@@ -2241,6 +1820,24 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     } catch (e) {
       print('Error fetching train to airport options: $e');
     }
+  }
+
+  String _getWalkingRouteName(Map<String, dynamic> route) {
+    // Extract meaningful path names from the route data
+    final legs = route['legs'] as List?;
+    if (legs != null && legs.isNotEmpty) {
+      for (var leg in legs) {
+        final steps = leg['steps'] as List?;
+        if (steps != null) {
+          for (var step in steps) {
+            if (step['navigationInstruction']?.contains('path') ?? false) {
+              return 'via pedestrian path';
+            }
+          }
+        }
+      }
+    }
+    return 'via walking route';
   }
 }
 
