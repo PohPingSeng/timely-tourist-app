@@ -34,7 +34,7 @@ class TransitOption {
   final String? viaRoute;
   final bool hasTolls;
   final bool isMultiModal;
-  bool isSelected;
+  final double? score;
 
   TransitOption({
     required this.mode,
@@ -49,7 +49,7 @@ class TransitOption {
     this.viaRoute,
     this.hasTolls = false,
     this.isMultiModal = false,
-    this.isSelected = false,
+    this.score,
   });
 
   TransitOption copyWith({
@@ -65,7 +65,7 @@ class TransitOption {
     String? viaRoute,
     bool? hasTolls,
     bool? isMultiModal,
-    bool? isSelected,
+    double? score,
   }) {
     return TransitOption(
       mode: mode ?? this.mode,
@@ -80,7 +80,7 @@ class TransitOption {
       viaRoute: viaRoute ?? this.viaRoute,
       hasTolls: hasTolls ?? this.hasTolls,
       isMultiModal: isMultiModal ?? this.isMultiModal,
-      isSelected: isSelected ?? this.isSelected,
+      score: score ?? this.score,
     );
   }
 }
@@ -155,90 +155,21 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
 
       print('Fetching routes from ${origin.name} to ${destination.name}');
 
+      // Fetch all transit modes in parallel using real API data
       await Future.wait([
-        _fetchWalkingDirections(origin, destination),
+        // Fetch driving routes with different preferences
         _fetchDrivingDirections(origin, destination, preferHighways: true),
         _fetchDrivingDirections(origin, destination, preferHighways: false),
         _fetchMotorcycleDirections(origin, destination),
         _fetchPublicTransitRoutes(origin, destination),
       ]);
 
+      // Sort options by actual duration from API responses
       _sortAndMarkBestOptions();
     } catch (e) {
       print('Error fetching routes: $e');
     } finally {
       setState(() => _isFetchingRoutes = false);
-    }
-  }
-
-  Future<void> _fetchWalkingDirections(
-      TripLocation origin, TripLocation destination) async {
-    final url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-
-    final headers = {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': _apiKey,
-      'X-Goog-FieldMask':
-          'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.travelAdvisory,routes.walkingDetails'
-    };
-
-    final body = jsonEncode({
-      "origin": {
-        "location": {
-          "latLng": {
-            "latitude": origin.latLng.latitude,
-            "longitude": origin.latLng.longitude
-          }
-        }
-      },
-      "destination": {
-        "location": {
-          "latLng": {
-            "latitude": destination.latLng.latitude,
-            "longitude": destination.latLng.longitude
-          }
-        }
-      },
-      "travelMode": "WALK",
-      "routingPreference": "WALK_SAFER",
-      "computeAlternativeRoutes": true,
-      "routeModifiers": {
-        "avoidHighways": true,
-        "avoidTolls": true,
-        "avoidIndoor": false
-      },
-      "languageCode": "en-US",
-      "units": "METRIC"
-    });
-
-    try {
-      final response =
-          await http.post(Uri.parse(url), headers: headers, body: body);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['routes'] != null) {
-          for (var route in data['routes']) {
-            final distanceMeters =
-                int.parse(route['distanceMeters'].toString());
-            if (distanceMeters <= 3000) {
-              // Only show walking routes under 3km
-              bool isRouteSafe = true;
-              if (route['travelAdvisory'] != null) {
-                final warnings = route['travelAdvisory']['warnings'] as List?;
-                isRouteSafe = warnings == null || warnings.isEmpty;
-              }
-
-              if (isRouteSafe) {
-                _addTransitOption(
-                    route, TransitMode.walking, origin.name, destination.name,
-                    viaRoute: _getWalkingRouteName(route), price: 'Free');
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      print('Error fetching walking directions: $e');
     }
   }
 
@@ -289,29 +220,17 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
         final data = json.decode(response.body);
         if (data['routes'] != null) {
           for (var route in data['routes']) {
-            // Fix the toll road check
-            bool hasTolls = false;
-            if (route['travelAdvisory'] != null) {
-              final advisories =
-                  route['travelAdvisory'] as Map<String, dynamic>;
+            // Calculate score based on duration
+            final durationInSeconds =
+                int.parse(route['duration'].toString().replaceAll('s', ''));
+            final score = durationInSeconds.toDouble();
 
-              // Check for explicit toll road flag
-              final hasTollRoads = advisories['tollRoads'] == true;
-
-              // Check warnings list if it exists
-              final warnings = advisories['warnings'] as List?;
-              final hasTollWarning = warnings?.any((warning) =>
-                      warning.toString().toLowerCase().contains('toll')) ??
-                  false;
-
-              hasTolls = hasTollRoads || hasTollWarning;
-            }
-
-            final viaRoute = preferHighways ? 'via AH2/E1' : 'via local roads';
-
+            // Add driving option
             _addTransitOption(
                 route, TransitMode.driving, origin.name, destination.name,
-                viaRoute: viaRoute, hasTolls: hasTolls);
+                viaRoute: preferHighways ? 'via highways' : 'via local roads',
+                hasTolls: _checkForTolls(route),
+                score: score);
           }
         }
       }
@@ -328,7 +247,7 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': _apiKey,
       'X-Goog-FieldMask':
-          'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.travelAdvisory'
+          'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.travelAdvisory,routes.routeLabels'
     };
 
     final body = jsonEncode({
@@ -348,8 +267,14 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
           }
         }
       },
-      "travelMode": "TWO_WHEELER",
+      "travelMode": "TWO_WHEELER", // Specific mode for motorcycles
       "routingPreference": "TRAFFIC_AWARE",
+      "extraComputations": ["TRAFFIC_ON_POLYLINE"],
+      "routeModifiers": {
+        "avoidHighways": false,
+        "avoidTolls": false,
+        "vehicleInfo": {"emissionType": "GASOLINE"}
+      },
       "computeAlternativeRoutes": true,
       "languageCode": "en-US",
       "units": "METRIC"
@@ -362,9 +287,15 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
         final data = json.decode(response.body);
         if (data['routes'] != null) {
           for (var route in data['routes']) {
+            // Calculate score based on duration with slight advantage for motorcycles
+            final durationInSeconds =
+                int.parse(route['duration'].toString().replaceAll('s', ''));
+            final score = durationInSeconds *
+                0.9; // 10% faster than cars due to filtering
+
             _addTransitOption(
                 route, TransitMode.motorcycle, origin.name, destination.name,
-                viaRoute: route['description'] ?? 'via motorcycle');
+                viaRoute: 'via optimized route', score: score);
           }
         }
       }
@@ -508,15 +439,6 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     // Lower score is better
     double score = _parseDuration(option.duration).toDouble();
 
-    // Prefer walking for very short distances (under 1km)
-    if (option.mode == TransitMode.walking) {
-      final distance =
-          double.parse(option.distance.split(' ')[0]); // Extract km value
-      if (distance <= 1) {
-        score *= 0.8; // Make walking more attractive for short distances
-      }
-    }
-
     // Prefer routes without tolls
     if (option.hasTolls) score += 30;
 
@@ -528,6 +450,17 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     return score;
   }
 
+  String _calculatePrice(
+      TransitMode mode, int distanceInMeters, Map<String, dynamic>? routeData,
+      {bool hasTolls = false}) {
+    // Only use fare data from API response
+    if (routeData != null && routeData['fare'] != null) {
+      final fare = routeData['fare'];
+      return '${fare['currency']} ${fare['amount']}';
+    }
+    return 'Price varies'; // Default when no fare data available
+  }
+
   void _addTransitOption(
     Map<String, dynamic> route,
     TransitMode mode,
@@ -537,6 +470,7 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     String? viaRoute,
     bool hasTolls = false,
     bool isMultiModal = false,
+    double? score,
   }) {
     final durationInSeconds =
         int.parse(route['duration'].toString().replaceAll('s', ''));
@@ -550,8 +484,9 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     final distanceKm = (distanceInMeters / 1000).toStringAsFixed(1);
     final distanceText = '$distanceKm km';
 
-    // Use provided price or default to 'Price varies'
-    final routePrice = price ?? 'Price varies';
+    // Use provided price or calculate from route data
+    final routePrice = price ??
+        _calculatePrice(mode, distanceInMeters, route, hasTolls: hasTolls);
 
     _transitOptions.add(TransitOption(
       mode: mode,
@@ -566,15 +501,13 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
       viaRoute: viaRoute,
       hasTolls: hasTolls,
       isMultiModal: isMultiModal,
-      isSelected: false,
+      score: score,
     ));
 
     _routes.add(_createPolyline(
       '${mode.toString()}_${_transitOptions.length}',
       _decodePolyline(route['polyline']['encodedPolyline']),
       _getModeColor(mode),
-      mode: mode,
-      isSelected: false,
     ));
   }
 
@@ -677,21 +610,12 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     return points;
   }
 
-  Polyline _createPolyline(
-    String id,
-    List<LatLng> points,
-    Color color, {
-    TransitMode? mode,
-    bool isSelected = false,
-  }) {
+  Polyline _createPolyline(String id, List<LatLng> points, Color color) {
     return Polyline(
       polylineId: PolylineId(id),
       points: points,
       color: color,
-      width: isSelected ? 6 : 4,
-      patterns: mode == TransitMode.walking
-          ? [PatternItem.dot, PatternItem.gap(8)]
-          : [],
+      width: 4,
     );
   }
 
@@ -863,13 +787,13 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
             child: Column(
               children: [
                 _buildLocationField(
-                  location: widget.locations[0],
+                  widget.locations[0],
                   isOrigin: true,
                   onRemove: () => _handleLocationRemoval(widget.locations[0]),
                 ),
                 SizedBox(height: 8),
                 _buildLocationField(
-                  location: widget.locations[1],
+                  widget.locations[1],
                   isOrigin: false,
                   onRemove: () => _handleLocationRemoval(widget.locations[1]),
                 ),
@@ -885,11 +809,8 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     );
   }
 
-  Widget _buildLocationField({
-    required TripLocation location,
-    required bool isOrigin,
-    required Function() onRemove,
-  }) {
+  Widget _buildLocationField(TripLocation location,
+      {required bool isOrigin, required Function() onRemove}) {
     return Row(
       children: [
         Expanded(
@@ -1051,15 +972,11 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
 
   Widget _buildRouteOptions() {
     if (_isFetchingRoutes) {
-      return Center(
-        child: CircularProgressIndicator(),
-      );
+      return Center(child: CircularProgressIndicator());
     }
 
     if (_transitOptions.isEmpty) {
-      return Center(
-        child: Text('No routes found. Try different locations.'),
-      );
+      return Center(child: Text('No routes found. Try different locations.'));
     }
 
     return ListView.builder(
@@ -1067,23 +984,11 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
       itemCount: _transitOptions.length,
       itemBuilder: (context, index) {
         final option = _transitOptions[index];
-
-        // Determine if this is a multi-modal option
-        bool isMultiModal = option.mode == TransitMode.bus &&
-            option.origin != option.destination &&
-            option.distance.contains('km') &&
-            double.parse(option.distance.split(' ')[0]) > 100;
-
-        // Check if this route is selected
-        final isSelected = _selectedRouteId.isNotEmpty &&
-            _routes.isNotEmpty &&
-            _routes.first.points.toString() ==
-                _decodePolyline(option.polyline).toString();
+        final isSelected = _selectedRouteId ==
+            '${option.mode.toString()}_${option.polyline.hashCode}';
 
         return InkWell(
-          onTap: () {
-            _highlightRoute(option.polyline);
-          },
+          onTap: () => _highlightRoute(option.polyline),
           child: Container(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
@@ -1097,59 +1002,34 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // First row: Transport mode icons and title
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Transport mode icon(s)
-                    Container(
-                      width: 40,
-                      height: 40,
-                      alignment: Alignment.center,
-                      child: isMultiModal
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.directions_bus,
-                                    color: Colors.red, size: 18),
-                                Icon(Icons.flight,
-                                    color: Colors.indigo, size: 18),
-                              ],
-                            )
-                          : Icon(
-                              _getModeIcon(option.mode),
-                              color: _getModeColor(option.mode),
-                              size: 24,
-                            ),
+                    Icon(
+                      _getModeIcon(option.mode),
+                      color: _getModeColor(option.mode),
+                      size: 24,
                     ),
-                    SizedBox(width: 16),
-
-                    // Title and BEST tag
+                    SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Title with BEST tag
-                          Wrap(
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 8,
+                          Row(
                             children: [
                               Text(
-                                isMultiModal
-                                    ? 'Bus to airport, fly to ${option.destination}'
-                                    : option.mode == TransitMode.flight
-                                        ? 'Fly to ${option.destination}'
-                                        : _getModeString(option.mode)
-                                            .capitalize(),
+                                _getModeString(option.mode).capitalize(),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
                                 ),
                               ),
-                              if (option.isBest)
+                              if (option.isBest) ...[
+                                SizedBox(width: 8),
                                 Container(
                                   padding: EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.green.shade100,
                                     borderRadius: BorderRadius.circular(12),
@@ -1163,35 +1043,20 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
                                     ),
                                   ),
                                 ),
+                              ],
                             ],
                           ),
-
-                          // Duration and distance
-                          SizedBox(height: 4),
                           Text(
                             '${option.duration} • ${option.distance}',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
-                            ),
+                            style: TextStyle(color: Colors.grey[600]),
                           ),
                         ],
                       ),
                     ),
-                  ],
-                ),
-
-                // Second row: Price and arrow
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
                     Text(
                       option.price,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    SizedBox(width: 8),
                     Icon(Icons.chevron_right, color: Colors.grey),
                   ],
                 ),
@@ -1227,32 +1092,91 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
 
   void _highlightRoute(String polyline) {
     setState(() {
-      // Clear existing routes
-      _routes.clear();
-      _selectedRouteId = DateTime.now().millisecondsSinceEpoch.toString();
+      // Find all options that match this polyline
+      final matchingOptions = _transitOptions
+          .where((option) => option.polyline == polyline)
+          .toList();
 
-      // Update selection state for all options
-      for (var i = 0; i < _transitOptions.length; i++) {
-        final isSelected = _transitOptions[i].polyline == polyline;
-        _transitOptions[i] =
-            _transitOptions[i].copyWith(isSelected: isSelected);
+      // Find the option to select based on the clicked item and current selection
+      TransitOption selectedOption;
+      if (matchingOptions.length > 1) {
+        // Get the clicked option's mode from the UI context
+        final clickedMode = matchingOptions.first.mode;
+
+        // If this mode is already selected, try to select the other mode
+        if (_selectedRouteId.startsWith(clickedMode.toString())) {
+          selectedOption = matchingOptions.firstWhere(
+            (option) => option.mode != clickedMode,
+            orElse: () => matchingOptions.first,
+          );
+        } else {
+          // Select the clicked mode
+          selectedOption = matchingOptions.firstWhere(
+            (option) => option.mode == clickedMode,
+            orElse: () => matchingOptions.first,
+          );
+        }
+      } else {
+        selectedOption = matchingOptions.first;
       }
 
-      // Find the selected option
-      final selectedOption = _transitOptions.firstWhere(
-        (option) => option.polyline == polyline,
-        orElse: () => _transitOptions.first,
+      // Generate a unique ID that includes mode and polyline hash
+      final routeId =
+          '${selectedOption.mode.toString()}_${selectedOption.polyline.hashCode}';
+      _selectedRouteId = routeId;
+
+      // Clear existing routes
+      _routes = {};
+
+      // Add the selected route with mode-specific styling
+      _routes.add(
+        Polyline(
+          polylineId: PolylineId(routeId),
+          points: _decodePolyline(polyline),
+          color: selectedOption.mode == TransitMode.motorcycle
+              ? Colors.orange.withOpacity(0.8)
+              : Colors.blue.withOpacity(0.8),
+          width: selectedOption.mode == TransitMode.motorcycle ? 4 : 6,
+          patterns: selectedOption.mode == TransitMode.motorcycle
+              ? [PatternItem.dash(20), PatternItem.gap(10)]
+              : [],
+          endCap: selectedOption.mode == TransitMode.motorcycle
+              ? Cap.roundCap
+              : Cap.squareCap,
+          startCap: selectedOption.mode == TransitMode.motorcycle
+              ? Cap.roundCap
+              : Cap.squareCap,
+        ),
       );
 
-      // Add only the selected route with highlighted style
-      _routes.add(_createPolyline(
-        _selectedRouteId,
-        _decodePolyline(polyline),
-        _getModeColor(selectedOption.mode),
-        mode: selectedOption.mode,
-        isSelected: true,
-      ));
+      // Ensure the route is visible on the map
+      if (_mapController != null) {
+        final bounds = _getPolylineBounds(_decodePolyline(polyline));
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngBounds(bounds, 50),
+        );
+      }
     });
+  }
+
+  // Add this helper method to calculate bounds for a polyline
+  LatLngBounds _getPolylineBounds(List<LatLng> points) {
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+
+    for (var point in points) {
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLng) minLng = point.longitude;
+      if (point.longitude > maxLng) maxLng = point.longitude;
+    }
+
+    return LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
   }
 
   Widget _buildAddDestination() {
@@ -1542,27 +1466,82 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     return minutes;
   }
 
-  // Add this method to sort and mark best options
+  Future<void> _fetchOptimizedRoute(List<TripLocation> locations) async {
+    final url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+
+    final headers = {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': _apiKey,
+      'X-Goog-FieldMask':
+          'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.optimizedIntermediateWaypointIndex'
+    };
+
+    // Create waypoints from locations
+    final intermediateWaypoints = locations
+        .sublist(1, locations.length - 1)
+        .map((loc) => {
+              "location": {
+                "latLng": {
+                  "latitude": loc.latLng.latitude,
+                  "longitude": loc.latLng.longitude
+                }
+              }
+            })
+        .toList();
+
+    final body = jsonEncode({
+      "origin": {
+        "location": {
+          "latLng": {
+            "latitude": locations.first.latLng.latitude,
+            "longitude": locations.first.latLng.longitude
+          }
+        }
+      },
+      "destination": {
+        "location": {
+          "latLng": {
+            "latitude": locations.last.latLng.latitude,
+            "longitude": locations.last.latLng.longitude
+          }
+        }
+      },
+      "intermediates": intermediateWaypoints,
+      "optimizeWaypointOrder": true,
+      "travelMode": "DRIVE",
+      "routingPreference": "TRAFFIC_AWARE",
+      "computeAlternativeRoutes": false,
+      "languageCode": "en-US",
+      "units": "METRIC"
+    });
+
+    try {
+      final response =
+          await http.post(Uri.parse(url), headers: headers, body: body);
+      // Handle response similar to other methods
+    } catch (e) {
+      print('Error fetching optimized route: $e');
+    }
+  }
+
+  // Add method to sort and mark best options
   void _sortAndMarkBestOptions() {
     if (_transitOptions.isEmpty) return;
 
-    // Reset all flags
+    // Reset all isBest flags
     for (var option in _transitOptions) {
-      option = option.copyWith(isBest: false, isSelected: false);
+      option = option.copyWith(isBest: false);
     }
 
-    // Sort by score
-    _transitOptions.sort(
-        (a, b) => _calculateRouteScore(a).compareTo(_calculateRouteScore(b)));
+    // Sort by actual duration from API responses
+    _transitOptions.sort((a, b) {
+      final aDuration = _parseDuration(a.duration);
+      final bDuration = _parseDuration(b.duration);
+      return aDuration.compareTo(bDuration);
+    });
 
-    // Mark the best option and select it
-    _transitOptions[0] = _transitOptions[0].copyWith(
-      isBest: true,
-      isSelected: true,
-    );
-
-    // Highlight the best route
-    _highlightRoute(_transitOptions[0].polyline);
+    // Mark the fastest option as best
+    _transitOptions[0] = _transitOptions[0].copyWith(isBest: true);
   }
 
   // Add this method to handle location swapping
@@ -1822,22 +1801,23 @@ class _TransportationRoutePageState extends State<TransportationRoutePage> {
     }
   }
 
-  String _getWalkingRouteName(Map<String, dynamic> route) {
-    // Extract meaningful path names from the route data
-    final legs = route['legs'] as List?;
-    if (legs != null && legs.isNotEmpty) {
-      for (var leg in legs) {
-        final steps = leg['steps'] as List?;
-        if (steps != null) {
-          for (var step in steps) {
-            if (step['navigationInstruction']?.contains('path') ?? false) {
-              return 'via pedestrian path';
-            }
-          }
-        }
-      }
+  bool _checkForTolls(Map<String, dynamic> route) {
+    bool hasTolls = false;
+    if (route['travelAdvisory'] != null) {
+      final advisories = route['travelAdvisory'] as Map<String, dynamic>;
+
+      // Check for explicit toll road flag
+      final hasTollRoads = advisories['tollRoads'] == true;
+
+      // Check warnings list if it exists
+      final warnings = advisories['warnings'] as List?;
+      final hasTollWarning = warnings?.any(
+              (warning) => warning.toString().toLowerCase().contains('toll')) ??
+          false;
+
+      hasTolls = hasTollRoads || hasTollWarning;
     }
-    return 'via walking route';
+    return hasTolls;
   }
 }
 

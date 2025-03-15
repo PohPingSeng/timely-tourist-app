@@ -61,89 +61,25 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
 
       print('Fetching routes from ${origin.name} to ${destination.name}');
 
+      // Fetch all transit modes in parallel for better performance
       await Future.wait([
-        _fetchWalkingDirections(origin, destination),
+        // 1. Fetch driving routes with different preferences
         _fetchDrivingDirections(origin, destination, preferHighways: true),
         _fetchDrivingDirections(origin, destination, preferHighways: false),
         _fetchMotorcycleDirections(origin, destination),
+
+        // 2. Fetch public transit routes
         _fetchPublicTransitRoutes(origin, destination),
+
+        // 3. For longer distances, check flight options
         if (_isLongDistance(origin, destination))
           _fetchMultiModalOptions(origin, destination),
       ]);
 
+      // Sort options by duration
       _sortAndMarkBestOptions();
     } catch (e) {
       print('Error fetching routes: $e');
-    }
-  }
-
-  Future<void> _fetchWalkingDirections(
-      TripLocation origin, TripLocation destination) async {
-    final url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-
-    final headers = {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': _apiKey,
-      'X-Goog-FieldMask':
-          'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.travelAdvisory,routes.walkingDetails'
-    };
-
-    final body = jsonEncode({
-      "origin": {
-        "location": {
-          "latLng": {
-            "latitude": origin.latLng.latitude,
-            "longitude": origin.latLng.longitude
-          }
-        }
-      },
-      "destination": {
-        "location": {
-          "latLng": {
-            "latitude": destination.latLng.latitude,
-            "longitude": destination.latLng.longitude
-          }
-        }
-      },
-      "travelMode": "WALK",
-      "routingPreference": "WALK_SAFER",
-      "computeAlternativeRoutes": true,
-      "routeModifiers": {
-        "avoidHighways": true,
-        "avoidTolls": true,
-        "avoidIndoor": false
-      },
-      "languageCode": "en-US",
-      "units": "METRIC"
-    });
-
-    try {
-      final response =
-          await http.post(Uri.parse(url), headers: headers, body: body);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['routes'] != null) {
-          for (var route in data['routes']) {
-            final distanceMeters =
-                int.parse(route['distanceMeters'].toString());
-            if (distanceMeters <= 3000) {
-              bool isRouteSafe = true;
-              if (route['travelAdvisory'] != null) {
-                final warnings = route['travelAdvisory']['warnings'] as List?;
-                isRouteSafe = warnings == null || warnings.isEmpty;
-              }
-
-              if (isRouteSafe) {
-                _addTransitOption(
-                    route, TransitMode.walking, origin.name, destination.name,
-                    viaRoute: 'via pedestrian path');
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      print('Error fetching walking directions: $e');
     }
   }
 
