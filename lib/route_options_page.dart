@@ -47,7 +47,23 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
         infoWindow: InfoWindow(title: widget.destination.name),
       ),
     };
-    _fetchRouteOptions();
+
+    // If there's a current route, we'll mark it as selected after fetching routes
+    _fetchRouteOptions().then((_) {
+      if (widget.currentRoute != null) {
+        // Find and mark the matching route as selected
+        for (var option in _transitOptions) {
+          if (option.mode == widget.currentRoute!.mode &&
+              option.duration == widget.currentRoute!.duration &&
+              option.distance == widget.currentRoute!.distance) {
+            setState(() {
+              option = option.copyWith(isBest: true);
+            });
+            break;
+          }
+        }
+      }
+    });
   }
 
   Future<void> _fetchRouteOptions() async {
@@ -163,7 +179,7 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': _apiKey,
       'X-Goog-FieldMask':
-          'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.travelAdvisory'
+          'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.travelAdvisory,routes.routeLabels'
     };
 
     final body = jsonEncode({
@@ -185,6 +201,12 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
       },
       "travelMode": "TWO_WHEELER",
       "routingPreference": "TRAFFIC_AWARE",
+      "extraComputations": ["TRAFFIC_ON_POLYLINE"],
+      "routeModifiers": {
+        "avoidHighways": false,
+        "avoidTolls": false,
+        "vehicleInfo": {"emissionType": "GASOLINE"}
+      },
       "computeAlternativeRoutes": true,
       "languageCode": "en-US",
       "units": "METRIC"
@@ -197,9 +219,20 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
         final data = json.decode(response.body);
         if (data['routes'] != null) {
           for (var route in data['routes']) {
+            // Calculate score based on duration with slight advantage for motorcycles
+            final durationInSeconds =
+                int.parse(route['duration'].toString().replaceAll('s', ''));
+            final score = durationInSeconds *
+                0.9; // 10% faster than cars due to filtering
+
             _addTransitOption(
-                route, TransitMode.motorcycle, origin.name, destination.name,
-                viaRoute: route['description'] ?? 'via motorcycle');
+              route,
+              TransitMode.motorcycle,
+              origin.name,
+              destination.name,
+              viaRoute: 'via optimized route',
+              score: score,
+            );
           }
         }
       }
@@ -216,6 +249,7 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
     String? viaRoute,
     bool hasTolls = false,
     bool isMultiModal = false,
+    double? score,
   }) {
     final durationInSeconds =
         int.parse(route['duration'].toString().replaceAll('s', ''));
@@ -228,6 +262,30 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
 
     final distanceKm = (distanceInMeters / 1000).toStringAsFixed(1);
     final distanceText = '$distanceKm km';
+
+    // Calculate score based on duration with mode-specific adjustments
+    double calculatedScore = durationInSeconds.toDouble();
+
+    // Give motorcycles an advantage in traffic/urban areas
+    if (mode == TransitMode.motorcycle) {
+      // 10% faster than cars due to filtering
+      calculatedScore *= 0.9;
+    }
+
+    // Penalize cars more in urban/short routes
+    if (mode == TransitMode.driving) {
+      final distance = distanceInMeters / 1000; // Convert to km
+      if (distance < 20) {
+        // For short urban trips
+        calculatedScore *= 1.2; // 20% penalty for cars in urban areas
+      }
+    }
+
+    // Adjust for tolls and public transit
+    if (hasTolls) calculatedScore += 30;
+    if (mode == TransitMode.bus || mode == TransitMode.train) {
+      calculatedScore *= 0.95;
+    }
 
     final newOption = TransitOption(
       mode: mode,
@@ -242,6 +300,7 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
       viaRoute: viaRoute,
       hasTolls: hasTolls,
       isMultiModal: isMultiModal,
+      score: score ?? calculatedScore,
     );
 
     setState(() {
@@ -257,24 +316,21 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
   void _sortAndMarkBestOptions() {
     if (_transitOptions.isEmpty) return;
 
-    // Sort by duration
-    _transitOptions.sort((a, b) =>
-        _parseDuration(a.duration).compareTo(_parseDuration(b.duration)));
-
-    // Reset all routes to not best
+    // Reset all isBest flags
     for (var option in _transitOptions) {
-      option.isBest = false;
+      option = option.copyWith(isBest: false);
     }
 
-    // If there's a current route, mark only that one as best
-    if (widget.currentRoute != null) {
-      for (var option in _transitOptions) {
-        if (option.mode == widget.currentRoute!.mode &&
-            option.duration == widget.currentRoute!.duration &&
-            option.distance == widget.currentRoute!.distance) {
-          option.isBest = true;
-          break; // Only mark one route as best
-        }
+    // Sort by score (which includes duration, mode preferences, and penalties)
+    _transitOptions.sort((a, b) => (a.score ?? 0).compareTo(b.score ?? 0));
+
+    // Mark the best option and notify parent
+    if (_transitOptions.isNotEmpty) {
+      _transitOptions[0] = _transitOptions[0].copyWith(isBest: true);
+
+      // Automatically select the best option if no current route
+      if (widget.currentRoute == null && widget.onRouteSelected != null) {
+        widget.onRouteSelected!(_transitOptions[0]);
       }
     }
 
@@ -387,179 +443,126 @@ class _RouteOptionsPageState extends State<RouteOptionsPage> {
                     itemCount: _transitOptions.length,
                     itemBuilder: (context, index) {
                       final option = _transitOptions[index];
-                      final color = _getModeColor(option.mode);
-
-                      return Container(
-                        margin: EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 10,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: () {
-                              // Update selection
-                              setState(() {
-                                for (var opt in _transitOptions) {
-                                  opt.isBest = false;
-                                }
-                                option.isBest = true;
-                              });
-
-                              // Notify parent
-                              if (widget.onRouteSelected != null) {
-                                widget.onRouteSelected!(option);
-                              }
-                            },
-                            child: Stack(
-                              children: [
-                                Padding(
-                                  padding: EdgeInsets.all(16),
-                                  child: Row(
-                                    children: [
-                                      // Selection indicator (plus or check)
-                                      Container(
-                                        width: 24,
-                                        height: 24,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: _isCurrentRoute(option)
-                                              ? color
-                                              : Colors.grey[100],
-                                        ),
-                                        child: Icon(
-                                          _isCurrentRoute(option)
-                                              ? Icons.check
-                                              : Icons.add,
-                                          size: 16,
-                                          color: _isCurrentRoute(option)
-                                              ? Colors.white
-                                              : Colors.grey[400],
-                                        ),
-                                      ),
-                                      SizedBox(width: 16),
-                                      // Mode icon with colored background
-                                      Container(
-                                        padding: EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: color.withOpacity(0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Icon(
-                                          _getModeIcon(option.mode),
-                                          color: color,
-                                          size: 20,
-                                        ),
-                                      ),
-                                      SizedBox(width: 16),
-                                      // Route details
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              option.isMultiModal
-                                                  ? option.viaRoute ??
-                                                      _getModeString(
-                                                          option.mode)
-                                                  : _getModeString(option.mode),
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w500,
-                                                color: Colors.grey[900],
-                                              ),
-                                            ),
-                                            SizedBox(height: 4),
-                                            Row(
-                                              children: [
-                                                Text(
-                                                  option.duration,
-                                                  style: TextStyle(
-                                                    color: Colors.grey[600],
-                                                    fontSize: 14,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  ' · ${option.distance}',
-                                                  style: TextStyle(
-                                                    color: Colors.grey[600],
-                                                    fontSize: 14,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      // Price and arrow
-                                      Row(
-                                        children: [
-                                          if (option.price.isNotEmpty)
-                                            Text(
-                                              option.price,
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w500,
-                                                color: Colors.grey[900],
-                                              ),
-                                            ),
-                                          Icon(
-                                            Icons.chevron_right,
-                                            color: Colors.grey[400],
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                // BEST label
-                                if (index == 0)
-                                  Positioned(
-                                    top: 0,
-                                    right: 0,
-                                    child: Container(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green,
-                                        borderRadius: BorderRadius.only(
-                                          topRight: Radius.circular(12),
-                                          bottomLeft: Radius.circular(8),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        'BEST',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
+                      return _buildRouteCard(option, index);
                     },
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRouteCard(TransitOption option, int index) {
+    final color = _getModeColor(option.mode);
+    final isSelected = option.isBest; // Use isBest for selection state
+
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              // Update selection state
+              for (var opt in _transitOptions) {
+                opt = opt.copyWith(isBest: false);
+              }
+              option = option.copyWith(isBest: true);
+            });
+
+            if (widget.onRouteSelected != null) {
+              widget.onRouteSelected!(option);
+            }
+            Navigator.pop(context);
+          },
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              children: [
+                // Selection indicator (radio button style)
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected ? color : Colors.grey[300]!,
+                      width: 2,
+                    ),
+                    color: isSelected ? color : Colors.white,
+                  ),
+                  child: isSelected
+                      ? Icon(Icons.check, size: 16, color: Colors.white)
+                      : null,
+                ),
+                SizedBox(width: 12),
+                // Mode icon
+                Icon(_getModeIcon(option.mode), color: color),
+                SizedBox(width: 12),
+                // Route details
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _getModeString(option.mode),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        '${option.duration} · ${option.distance}',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ],
+                  ),
+                ),
+                // Price and BEST label
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      option.price,
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                    if (option.isBest)
+                      Container(
+                        margin: EdgeInsets.only(top: 4),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'BEST',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

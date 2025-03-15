@@ -142,63 +142,133 @@ class _MultiTransportationRoutePageState
         final origin = widget.locations[i];
         final destination = widget.locations[i + 1];
 
-        final response = await http.post(
-          Uri.parse(
-              'https://routes.googleapis.com/directions/v2:computeRoutes'),
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': _apiKey,
-            'X-Goog-FieldMask':
-                'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
-          },
-          body: jsonEncode({
-            "origin": {
-              "location": {
-                "latLng": {
-                  "latitude": origin.latLng.latitude,
-                  "longitude": origin.latLng.longitude
+        final url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+        final headers = {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': _apiKey,
+          'X-Goog-FieldMask':
+              'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline'
+        };
+
+        // Fetch routes for both modes
+        final responses = await Future.wait([
+          // Motorcycle route
+          http.post(
+            Uri.parse(url),
+            headers: headers,
+            body: jsonEncode({
+              "origin": {
+                "location": {
+                  "latLng": {
+                    "latitude": origin.latLng.latitude,
+                    "longitude": origin.latLng.longitude
+                  }
                 }
-              }
-            },
-            "destination": {
-              "location": {
-                "latLng": {
-                  "latitude": destination.latLng.latitude,
-                  "longitude": destination.latLng.longitude
+              },
+              "destination": {
+                "location": {
+                  "latLng": {
+                    "latitude": destination.latLng.latitude,
+                    "longitude": destination.latLng.longitude
+                  }
                 }
-              }
-            },
-            "travelMode": "DRIVE",
-            "routingPreference": "TRAFFIC_AWARE",
-            "computeAlternativeRoutes": false,
-            "languageCode": "en-US",
-            "units": "METRIC"
-          }),
-        );
+              },
+              "travelMode": "TWO_WHEELER",
+              "routingPreference": "TRAFFIC_AWARE",
+              "computeAlternativeRoutes": true,
+              "languageCode": "en-US",
+              "units": "METRIC"
+            }),
+          ),
+          // Car route
+          http.post(
+            Uri.parse(url),
+            headers: headers,
+            body: jsonEncode({
+              "origin": {
+                "location": {
+                  "latLng": {
+                    "latitude": origin.latLng.latitude,
+                    "longitude": origin.latLng.longitude
+                  }
+                }
+              },
+              "destination": {
+                "location": {
+                  "latLng": {
+                    "latitude": destination.latLng.latitude,
+                    "longitude": destination.latLng.longitude
+                  }
+                }
+              },
+              "travelMode": "DRIVE",
+              "routingPreference": "TRAFFIC_AWARE",
+              "computeAlternativeRoutes": true,
+              "languageCode": "en-US",
+              "units": "METRIC"
+            }),
+          ),
+        ]);
 
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          if (data['routes']?.isNotEmpty) {
-            final route = data['routes'][0];
+        final options = <TransitOption>[];
 
-            final option = TransitOption(
-              mode: TransitMode.driving,
-              duration: _formatDuration(
-                  int.parse(route['duration'].replaceAll('s', ''))),
-              distance: _formatDistance(route['distanceMeters']),
-              price: _calculatePrice(route['distanceMeters']),
-              isBest: true,
-              steps: [],
-              polyline: route['polyline']['encodedPolyline'],
-              origin: origin.name,
-              destination: destination.name,
-            );
-
-            setState(() {
-              _bestTransitOptions.add(option);
-              _addRouteToMap(option.polyline, option.mode);
-            });
+        // Process motorcycle response
+        if (responses[0].statusCode == 200) {
+          final data = json.decode(responses[0].body);
+          if (data['routes'] != null) {
+            for (var route in data['routes']) {
+              options.add(TransitOption(
+                mode: TransitMode.motorcycle,
+                duration: _formatDuration(
+                    int.parse(route['duration'].replaceAll('s', ''))),
+                distance: _formatDistance(route['distanceMeters']),
+                price: 'Price varies',
+                isBest: false,
+                steps: [],
+                polyline: route['polyline']['encodedPolyline'],
+                origin: origin.name,
+                destination: destination.name,
+              ));
+            }
           }
+        }
+
+        // Process car response
+        if (responses[1].statusCode == 200) {
+          final data = json.decode(responses[1].body);
+          if (data['routes'] != null) {
+            for (var route in data['routes']) {
+              options.add(TransitOption(
+                mode: TransitMode.driving,
+                duration: _formatDuration(
+                    int.parse(route['duration'].replaceAll('s', ''))),
+                distance: _formatDistance(route['distanceMeters']),
+                price: 'Price varies',
+                isBest: false,
+                steps: [],
+                polyline: route['polyline']['encodedPolyline'],
+                origin: origin.name,
+                destination: destination.name,
+              ));
+            }
+          }
+        }
+
+        // Sort by duration
+        options.sort((a, b) {
+          final aDuration =
+              int.parse(a.duration.replaceAll(RegExp(r'[^0-9]'), ''));
+          final bDuration =
+              int.parse(b.duration.replaceAll(RegExp(r'[^0-9]'), ''));
+          return aDuration.compareTo(bDuration);
+        });
+
+        // Add the fastest route without marking it as best
+        if (options.isNotEmpty) {
+          setState(() {
+            _bestTransitOptions.add(options[0]);
+            _addRouteToMap(options[0].polyline, options[0].mode);
+          });
         }
       }
     } catch (e) {
@@ -218,12 +288,6 @@ class _MultiTransportationRoutePageState
   String _formatDistance(int meters) {
     final km = meters / 1000;
     return '${km.toStringAsFixed(1)} km';
-  }
-
-  String _calculatePrice(int meters) {
-    final km = meters / 1000;
-    final price = 2 + (km * 0.70); // Base fare + per km rate
-    return 'MYR${price.round()}';
   }
 
   void _addRouteToMap(String polyline, TransitMode mode) {
@@ -440,7 +504,7 @@ class _MultiTransportationRoutePageState
     final origin = widget.locations[index];
     final destination = widget.locations[index + 1];
 
-    // Make sure we have a valid current route for this segment
+    // Get current route for this segment
     TransitOption? currentRoute;
     if (index < _bestTransitOptions.length) {
       currentRoute = _bestTransitOptions[index];
@@ -459,13 +523,16 @@ class _MultiTransportationRoutePageState
               while (_bestTransitOptions.length <= index) {
                 _bestTransitOptions.add(selectedOption);
               }
-              // Update the selected route
+              // Update with the selected route from route_options_page
               _bestTransitOptions[index] = selectedOption;
-              // Refresh all routes on the map
+
+              // Refresh routes on the map
               _routes.clear();
               for (var i = 0; i < _bestTransitOptions.length; i++) {
-                _addRouteToMap(_bestTransitOptions[i].polyline,
-                    _bestTransitOptions[i].mode);
+                _addRouteToMap(
+                  _bestTransitOptions[i].polyline,
+                  _bestTransitOptions[i].mode,
+                );
               }
             });
           },
@@ -541,8 +608,6 @@ class _MultiTransportationRoutePageState
     if (index >= _bestTransitOptions.length) return SizedBox.shrink();
 
     final option = _bestTransitOptions[index];
-    final origin = widget.locations[index];
-    final destination = widget.locations[index + 1];
     final color = _getRouteColor(option.mode);
 
     return InkWell(
